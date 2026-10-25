@@ -1,0 +1,9 @@
+.env
+.env.local
+/vendor/
+/logs/
+/storage/
+*.log
+*.sqlite
+.vscode/
+.idea/

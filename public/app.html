@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NMS-GIS ISP | Pemetaan & Monitoring Fiber Optik</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    
+    <!-- Custom Application CSS -->
+    <link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body>
+
+    <!-- Top Navigation Bar -->
+    <header class="navbar">
+        <div class="brand">
+            <span style="font-size: 20px;">🌐</span>
+            <span>NMS-GIS ISP</span>
+            <span class="brand-badge">Fiber Optic</span>
+        </div>
+        <div class="nav-actions">
+            <span id="userBadge" class="brand-badge" style="background:#334155; display:none;"></span>
+            <button id="addNodeBtn" class="btn btn-primary btn-sm" style="display:none;">
+                ➕ Tambah Titik GIS
+            </button>
+            <button id="loginBtn" class="btn btn-secondary btn-sm">
+                Masuk
+            </button>
+            <button id="logoutBtn" class="btn btn-secondary btn-sm" style="display:none;">
+                Keluar
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="main-container">
+        <!-- Floating Dashboard & Layer Control Panel -->
+        <aside id="dashboardPanel" class="floating-panel">
+            <div class="panel-header">
+                <span>Monitoring Jaringan & Layer</span>
+                <button id="toggleSidebarBtn" class="btn btn-secondary btn-sm" style="padding: 2px 6px;">✕</button>
+            </div>
+            <div class="panel-body">
+                <!-- Summary KPI Cards -->
+                <div class="kpi-grid">
+                    <div class="kpi-card">
+                        <div class="kpi-title">Pelanggan Aktif</div>
+                        <div id="kpiOnline" class="kpi-value text-success">0</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-title">Redaman Warning</div>
+                        <div id="kpiWarning" class="kpi-value text-warning">0</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-title">Gangguan (LOS)</div>
+                        <div id="kpiLos" class="kpi-value text-danger">0</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-title">Total Terdata</div>
+                        <div id="kpiTotalCustomers" class="kpi-value text-muted">0</div>
+                    </div>
+                </div>
+
+                <!-- Layer Filters -->
+                <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); margin-top: 6px;">
+                    FILTER TAMPILAN LAYER:
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" class="filter-checkbox" data-filter="POP" checked>
+                        <span>🏢 POP / Core Server</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" class="filter-checkbox" data-filter="ODC" checked>
+                        <span>🗄️ ODC (Optical Distribution Cabinet)</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" class="filter-checkbox" data-filter="JB" checked>
+                        <span>🔷 JB (Joint Box Closure)</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" class="filter-checkbox" data-filter="ODP" checked>
+                        <span>📦 ODP (Distribution Point)</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" class="filter-checkbox" data-filter="CUSTOMER_NORMAL" checked>
+                        <span>🟢 Pelanggan Normal</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" class="filter-checkbox" data-filter="CUSTOMER_FAULT" checked>
+                        <span>🔴 Pelanggan Gangguan (LOS / dBm)</span>
+                    </label>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Leaflet Map Canvas -->
+        <div id="map"></div>
+    </main>
+
+    <!-- Modal: Login Pengguna -->
+    <div id="loginModal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <span>🔐 Masuk Sistem NMS-GIS</span>
+                <button id="closeLoginModalBtn" class="btn btn-secondary btn-sm">✕</button>
+            </div>
+            <form id="loginForm">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label" for="loginEmail">Email</label>
+                        <input type="email" id="loginEmail" class="form-input" required placeholder="admin@nms.isp" value="admin@nms.isp">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="loginPassword">Kata Sandi</label>
+                        <input type="password" id="loginPassword" class="form-input" required placeholder="••••••••" value="AdminPassword123!">
+                    </div>
+                    <div style="font-size: 11px; color: var(--text-muted);">
+                        <em>Default akun demo:</em><br>
+                        • Admin: <code>admin@nms.isp</code> / <code>AdminPassword123!</code><br>
+                        • Teknisi: <code>teknisi@nms.isp</code> / <code>TeknisiPassword123!</code>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">Masuk</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Tambah Titik GIS (3 Metode Input Lokasi Terintegrasi) -->
+    <div id="addNodeModal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <span>📍 Tambah Titik Infrastruktur GIS</span>
+                <button id="closeAddNodeModalBtn" class="btn btn-secondary btn-sm">✕</button>
+            </div>
+            <form id="addNodeForm">
+                <div class="modal-body">
+                    <!-- Metode 2: Tombol GPS Cepat -->
+                    <div style="background: rgba(37, 99, 235, 0.15); border: 1px dashed var(--primary); padding: 10px; border-radius: 8px;">
+                        <button type="button" id="btnUseGps" class="btn btn-primary btn-sm" style="width: 100%;">
+                            🎯 Gunakan Lokasi GPS Saya Saat Ini
+                        </button>
+                        <div style="font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 4px;">
+                            Atau geser Pin Merah langsung di peta (Metode 1)
+                        </div>
+                    </div>
+
+                    <!-- Koordinat Lat / Lng (Metode 3: Manual Input / Sync) -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <div class="form-group">
+                            <label class="form-label" for="nodeLat">Latitude</label>
+                            <input type="number" step="0.0000001" id="nodeLat" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="nodeLng">Longitude</label>
+                            <input type="number" step="0.0000001" id="nodeLng" class="form-input" required>
+                        </div>
+                    </div>
+                    <input type="hidden" id="nodeInputMethod" value="map_marker">
+
+                    <!-- Detail Node -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <div class="form-group">
+                            <label class="form-label" for="nodeTypeSelect">Tipe Node</label>
+                            <select id="nodeTypeSelect" class="form-select" required>
+                                <option value="ODP">ODP (Distribution Point)</option>
+                                <option value="JB">JB (Joint Box Closure)</option>
+                                <option value="ODC">ODC (Cabinet)</option>
+                                <option value="POP">POP (Core Server)</option>
+                                <option value="CUSTOMER">Pelanggan (ONT / ONU)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="nodePortCapacity">Kapasitas Port</label>
+                            <input type="number" id="nodePortCapacity" class="form-input" value="16" min="0">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="nodeCode">Kode Node Unik</label>
+                        <input type="text" id="nodeCode" class="form-input" required placeholder="Contoh: ODP-SMG-015">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="nodeName">Nama Node / Lokasi</label>
+                        <input type="text" id="nodeName" class="form-input" required placeholder="Contoh: ODP Ruko Pandanaran 3">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="nodeParentSelect">Parent Node (Hierarki Jalur)</label>
+                        <select id="nodeParentSelect" class="form-select">
+                            <option value="">-- Tanpa Parent (Root POP) --</option>
+                        </select>
+                    </div>
+
+                    <!-- Customer Specific Fields (shown if type == CUSTOMER) -->
+                    <div id="customerFields" style="display: none; border-top: 1px solid var(--border); padding-top: 8px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                            <div class="form-group">
+                                <label class="form-label" for="onuSn">Serial Number ONT</label>
+                                <input type="text" id="onuSn" class="form-input" placeholder="ZTEGC1234567">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="pppoeUser">Username PPPoE</label>
+                                <input type="text" id="pppoeUser" class="form-input" placeholder="budi_isp">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="nodeAddressNote">Patokan Lokasi Lapangan</label>
+                        <textarea id="nodeAddressNote" class="form-textarea" rows="2" placeholder="Contoh: Tiang depan minimarket, klem sabuk stainless"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" id="cancelAddNodeBtn" class="btn btn-secondary">Batal</button>
+                    <button type="submit" class="btn btn-primary">Simpan Node GIS</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <!-- Application Scripts -->
+    <script src="/assets/js/api.js"></script>
+    <script src="/assets/js/leaflet-map-manager.js"></script>
+    <script src="/assets/js/app.js"></script>
+</body>
+</html>

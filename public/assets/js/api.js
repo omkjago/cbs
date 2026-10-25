@@ -1,0 +1,154 @@
+/**
+ * REST API Client with JWT Bearer Token Management & Error Handling
+ */
+const Api = {
+    baseUrl: '/api/v1',
+
+    getToken() {
+        return localStorage.getItem('nms_access_token');
+    },
+
+    getRefreshToken() {
+        return localStorage.getItem('nms_refresh_token');
+    },
+
+    setTokens(accessToken, refreshToken) {
+        localStorage.setItem('nms_access_token', accessToken);
+        if (refreshToken) {
+            localStorage.setItem('nms_refresh_token', refreshToken);
+        }
+    },
+
+    clearTokens() {
+        localStorage.removeItem('nms_access_token');
+        localStorage.removeItem('nms_refresh_token');
+        localStorage.removeItem('nms_user');
+    },
+
+    getUser() {
+        try {
+            return JSON.parse(localStorage.getItem('nms_user') || 'null');
+        } catch {
+            return null;
+        }
+    },
+
+    setUser(user) {
+        localStorage.setItem('nms_user', JSON.stringify(user));
+    },
+
+    async request(endpoint, options = {}) {
+        const url = `${this.baseUrl}${endpoint}`;
+        const headers = {
+            'Content-Type': 'application/json',
+            ...(options.headers || {})
+        };
+
+        const token = this.getToken();
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        try {
+            let response = await fetch(url, { ...options, headers });
+
+            // Handle 401 token expiration (attempt refresh if available)
+            if (response.status === 401 && this.getRefreshToken() && !endpoint.includes('/auth/')) {
+                const refreshed = await this.refreshToken();
+                if (refreshed) {
+                    headers['Authorization'] = `Bearer ${this.getToken()}`;
+                    response = await fetch(url, { ...options, headers });
+                } else {
+                    this.clearTokens();
+                    window.dispatchEvent(new CustomEvent('auth-expired'));
+                    throw new Error('Sesi Anda telah kedaluwarsa. Silakan login kembali.');
+                }
+            }
+
+            const data = await response.json();
+            if (!response.ok) {
+                const errMsg = data.message || (data.errors ? data.errors.join(', ') : 'Terjadi kesalahan pada server.');
+                throw new Error(errMsg);
+            }
+
+            return data;
+        } catch (err) {
+            console.error(`API Error [${endpoint}]:`, err);
+            throw err;
+        }
+    },
+
+    async login(email, password) {
+        const res = await this.request('/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ email, password })
+        });
+        if (res.data && res.data.token) {
+            this.setTokens(res.data.token.access_token, res.data.token.refresh_token);
+            this.setUser(res.data.user);
+        }
+        return res;
+    },
+
+    async refreshToken() {
+        try {
+            const refreshToken = this.getRefreshToken();
+            if (!refreshToken) return false;
+
+            const res = await fetch(`${this.baseUrl}/auth/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken })
+            });
+
+            if (!res.ok) return false;
+            const data = await res.json();
+            if (data.data?.access_token) {
+                this.setTokens(data.data.access_token);
+                return true;
+            }
+            return false;
+        } catch {
+            return false;
+        }
+    },
+
+    async getMapData() {
+        return this.request('/gis/map-data');
+    },
+
+    async createNode(nodeData) {
+        return this.request('/gis/nodes', {
+            method: 'POST',
+            body: JSON.stringify(nodeData)
+        });
+    },
+
+    async updateNode(id, nodeData) {
+        return this.request(`/gis/nodes/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(nodeData)
+        });
+    },
+
+    async deleteNode(id) {
+        return this.request(`/gis/nodes/${id}`, {
+            method: 'DELETE'
+        });
+    },
+
+    async createCable(cableData) {
+        return this.request('/gis/cables', {
+            method: 'POST',
+            body: JSON.stringify(cableData)
+        });
+    },
+
+    async deleteCable(id) {
+        return this.request(`/gis/cables/${id}`, {
+            method: 'DELETE'
+        });
+    }
+};
+
+window.Api = Api;
