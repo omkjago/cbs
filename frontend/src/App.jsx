@@ -5,6 +5,7 @@ import LayerFilter from './components/LayerFilter';
 import GisMap from './components/GisMap';
 import AddNodeModal from './components/AddNodeModal';
 import LoginModal from './components/LoginModal';
+import FaultAlertBanner from './components/FaultAlertBanner';
 import { Api } from './services/api';
 
 export default function App() {
@@ -24,6 +25,7 @@ export default function App() {
   const [coords, setCoords] = useState({ lat: -6.991, lng: 110.423 });
   const [inputMethod, setInputMethod] = useState('map_marker');
   const [toast, setToast] = useState(null);
+  const [focusCoords, setFocusCoords] = useState(null);
 
   const showToast = (message, type = 'info') => {
     setToast({ message, type });
@@ -156,10 +158,16 @@ export default function App() {
           </div>
 
           <div className="panel-body">
+            <FaultAlertBanner
+              faults={mapData.suspected_fiber_cuts}
+              onFocusNode={(lat, lng) => setFocusCoords({ lat, lng })}
+            />
+
             <KpiCards summary={mapData.summary} />
 
             <LayerFilter
               filters={filters}
+
               onToggleFilter={(key, val) => setFilters((prev) => ({ ...prev, [key]: val }))}
             />
           </div>
@@ -169,6 +177,8 @@ export default function App() {
           nodes={mapData.nodes}
           cables={mapData.cables}
           filters={filters}
+          focusCoords={focusCoords}
+
           isPicking={isAddNodeOpen}
           pickerCoords={coords}
           onPickerMove={handlePickerMove}

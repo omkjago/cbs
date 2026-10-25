@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../Middlewares/AuthMiddleware.php';
+require_once __DIR__ . '/../Services/FaultAnalyzerService.php';
 
 final class GisController
 {
@@ -150,8 +151,10 @@ final class GisController
             $cablesStmt = $pdo->query($sqlCables);
             $rawCables = $cablesStmt->fetchAll();
 
+            $analysis = FaultAnalyzerService::analyze($pdo);
+            $suspectedCuts = $analysis['suspected_fiber_cuts'];
             $cables = [];
-            $suspectedCuts = [];
+
 
             foreach ($rawCables as $row) {
                 $waypoints = is_string($row['waypoints_json'])
