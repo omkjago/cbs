@@ -11,6 +11,8 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../src/Middlewares/CorsMiddleware.php';
 require_once __DIR__ . '/../src/Controllers/AuthController.php';
 require_once __DIR__ . '/../src/Controllers/GisController.php';
+require_once __DIR__ . '/../src/Controllers/DeviceController.php';
+require_once __DIR__ . '/../src/Controllers/MonitoringController.php';
 
 // Handle CORS Headers & Options Preflight
 CorsMiddleware::handle();
@@ -75,7 +77,49 @@ try {
         exit;
     }
 
-    // 3. Fallback 404 Not Found
+    // 3. Device Routes
+    if ($method === 'GET' && $uri === '/api/v1/devices') {
+        DeviceController::getDevices();
+        exit;
+    }
+    if ($method === 'POST' && $uri === '/api/v1/devices') {
+        DeviceController::createDevice();
+        exit;
+    }
+    if ($method === 'POST' && preg_match('#^/api/v1/devices/(\d+)/test$#', $uri, $matches)) {
+        DeviceController::testDevice((int)$matches[1]);
+        exit;
+    }
+    if ($method === 'DELETE' && preg_match('#^/api/v1/devices/(\d+)$#', $uri, $matches)) {
+        DeviceController::deleteDevice((int)$matches[1]);
+        exit;
+    }
+
+    // 4. Monitoring & Live OPM Routes
+    if ($method === 'GET' && preg_match('#^/api/v1/monitoring/nodes/(\d+)/live-opm$#', $uri, $matches)) {
+        MonitoringController::getLiveOpm((int)$matches[1]);
+        exit;
+    }
+    if ($method === 'GET' && $uri === '/api/v1/monitoring/active-faults') {
+        MonitoringController::getActiveFaults();
+        exit;
+    }
+
+    // 5. Temporary Logs & Retention Settings Routes
+    if ($method === 'GET' && $uri === '/api/v1/logs/temp') {
+        MonitoringController::getTempLogs();
+        exit;
+    }
+    if ($method === 'PUT' && $uri === '/api/v1/settings/log-retention') {
+        MonitoringController::updateLogRetention();
+        exit;
+    }
+    if ($method === 'DELETE' && $uri === '/api/v1/logs/temp/purge') {
+        MonitoringController::purgeTempLogs();
+        exit;
+    }
+
+    // Fallback 404 Not Found
     http_response_code(404);
     echo json_encode([
         'status' => 'error',

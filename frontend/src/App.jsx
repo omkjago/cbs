@@ -120,8 +120,13 @@ export default function App() {
   };
 
   const handleLiveOpm = (node) => {
-    const rx = node.rx_power_dbm !== null ? `${node.rx_power_dbm} dBm` : '-19.50 dBm';
-    showToast(`[Live OPM] ${node.node_code}: Rx Power = ${rx}`, 'success');
+    Api.getLiveOpm(node.id).then(res => {
+      const rx = res.data?.rx_power_dbm !== null ? `${res.data.rx_power_dbm} dBm` : 'N/A';
+      showToast(`[Live OPM] ${node.node_code}: Rx Power = ${rx} (Status: ${res.data?.connection_status})`, 'success');
+      loadMapData();
+    }).catch(err => showToast(err.message, 'error'));
+    return;
+
   };
 
   const handleCreateNode = async (nodeData) => {
