@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../Middlewares/AuthMiddleware.php';
 require_once __DIR__ . '/../Controllers/DeviceController.php';
+require_once __DIR__ . '/../Services/LogPurgeService.php';
 
 final class MonitoringController
 {
@@ -133,13 +134,7 @@ final class MonitoringController
 
         try {
             $pdo = Database::getConnection();
-
-            // Total rows
-            $countStmt = $pdo->query("SELECT COUNT(*) FROM monitoring_temp_logs");
-            $totalRows = (int)$countStmt->fetchColumn();
-
-            // Estimate table size in MB (approx 120 bytes per row)
-            $sizeMb = round(($totalRows * 120) / (1024 * 1024), 3);
+            $stats = LogPurgeService::calculateStats($pdo);
 
             // Recent 50 logs
             $logStmt = $pdo->query("
@@ -152,18 +147,10 @@ final class MonitoringController
             ");
             $logs = $logStmt->fetchAll();
 
-            // Current retention days setting
-            $setStmt = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'temp_log_retention_days'");
-            $retentionDays = (int)($setStmt->fetchColumn() ?: 7);
-
             if (!headers_sent()) http_response_code(200);
             echo json_encode([
                 'status' => 'success',
-                'summary' => [
-                    'total_logs' => $totalRows,
-                    'estimated_size_mb' => $sizeMb,
-                    'retention_days' => $retentionDays
-                ],
+                'summary' => $stats,
                 'data' => $logs
             ]);
 
@@ -218,7 +205,7 @@ final class MonitoringController
 
         try {
             $pdo = Database::getConnection();
-            $deleted = $pdo->exec("DELETE FROM monitoring_temp_logs");
+            $deleted = LogPurgeService::purgeAll($pdo);
 
             if (!headers_sent()) http_response_code(200);
             echo json_encode([

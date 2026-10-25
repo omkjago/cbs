@@ -36,6 +36,7 @@ jobs:
         run: |
           php tests/test_phase1.php
           php tests/test_phase2.php
+          php tests/test_phase3.php
 
       # Setup Node.js for React Frontend
       - name: Setup Node.js

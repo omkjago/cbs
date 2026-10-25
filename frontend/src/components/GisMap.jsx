@@ -7,6 +7,7 @@ export default function GisMap({
   filters = {},
   isPicking = false,
   pickerCoords = null,
+  focusCoords = null,
   onPickerMove = null,
   onUpdateCoords = null,
   onLiveOpm = null
@@ -41,6 +42,12 @@ export default function GisMap({
       mapInstance.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (focusCoords && mapInstance.current && focusCoords.lat && focusCoords.lng) {
+      mapInstance.current.flyTo([focusCoords.lat, focusCoords.lng], 18);
+    }
+  }, [focusCoords]);
 
   // 2. Custom Icon Factory
   const createCustomIcon = (nodeType, status, isPulsing = false) => {
