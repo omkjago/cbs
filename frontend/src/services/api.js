@@ -133,6 +133,54 @@ export const Api = {
     });
   },
 
+  async getDevices() {
+    return this.request('/devices');
+  },
+
+  async createDevice(deviceData) {
+    return this.request('/devices', {
+      method: 'POST',
+      body: JSON.stringify(deviceData)
+    });
+  },
+
+  async testDevice(id) {
+    return this.request(`/devices/${id}/test`, {
+      method: 'POST'
+    });
+  },
+
+  async deleteDevice(id) {
+    return this.request(`/devices/${id}`, {
+      method: 'DELETE'
+    });
+  },
+
+  async getLiveOpm(nodeId) {
+    return this.request(`/monitoring/nodes/${nodeId}/live-opm`);
+  },
+
+  async getActiveFaults() {
+    return this.request('/monitoring/active-faults');
+  },
+
+  async getTempLogs() {
+    return this.request('/logs/temp');
+  },
+
+  async updateLogRetention(days) {
+    return this.request('/settings/log-retention', {
+      method: 'PUT',
+      body: JSON.stringify({ retention_days: days })
+    });
+  },
+
+  async purgeTempLogs() {
+    return this.request('/logs/temp/purge', {
+      method: 'DELETE'
+    });
+  },
+
   async createCable(cableData) {
     return this.request('/gis/cables', {
       method: 'POST',
