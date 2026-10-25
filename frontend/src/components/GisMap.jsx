@@ -1,6 +1,16 @@
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
 
+const escapeHtml = (unsafe) => {
+  if (!unsafe) return '';
+  return String(unsafe)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+};
+
 export default function GisMap({
   nodes = [],
   cables = [],
@@ -163,10 +173,10 @@ export default function GisMap({
       const popupContent = document.createElement('div');
       popupContent.style.minWidth = '200px';
       popupContent.innerHTML = `
-        <div style="font-weight:bold; font-size:14px; margin-bottom:4px; color:#1e293b;">${node.node_name}</div>
-        <div style="font-size:11px; color:#64748b; margin-bottom:8px;">Kode: <strong>${node.node_code}</strong> (${node.node_type})</div>
-        <div style="font-size:12px; margin-bottom:4px; color:#1e293b;">Rx Power (OPM): <strong>${rxText}</strong></div>
-        ${node.address_note ? `<div style="font-size:11px; color:#475569; margin-top:4px;">📍 <em>${node.address_note}</em></div>` : ''}
+        <div style="font-weight:bold; font-size:14px; margin-bottom:4px; color:#1e293b;">${escapeHtml(node.node_name)}</div>
+        <div style="font-size:11px; color:#64748b; margin-bottom:8px;">Kode: <strong>${escapeHtml(node.node_code)}</strong> (${escapeHtml(node.node_type)})</div>
+        <div style="font-size:12px; margin-bottom:4px; color:#1e293b;">Rx Power (OPM): <strong>${escapeHtml(rxText)}</strong></div>
+        ${node.address_note ? `<div style="font-size:11px; color:#475569; margin-top:4px;">📍 <em>${escapeHtml(node.address_note)}</em></div>` : ''}
         <hr style="border:none; border-top:1px solid #e2e8f0; margin:8px 0;">
         <div style="display:flex; gap:6px;">
           <button id="btn-opm-${node.id}" style="flex:1; background:#2563eb; color:white; border:none; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer;">

@@ -1,0 +1,90 @@
+# ==============================================================================
+# NMS-GIS ISP - Hardened Nginx + PHP-FPM Production Configuration
+# Zero-Shell Policy & Mitigated against CVE-2024-4577 / PHP2Shell
+# ==============================================================================
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name nms-gis.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name nms-gis.example.com;
+
+    # SSL Configuration (Let's Encrypt / Custom SSL)
+    # ssl_certificate /etc/letsencrypt/live/nms-gis.example.com/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/nms-gis.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    # Root pointing to public/ directory
+    root /var/www/nms-gis/public;
+    index index.php index.html;
+
+    # Security Headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "geolocation=(self)" always;
+
+    # Mitigate PHP CGI Argument Injection (CVE-2024-4577)
+    if ($query_string ~* "(-d|-s|-u|-w|%ad)") {
+        return 403;
+    }
+
+    # Hide Nginx version
+    server_tokens off;
+
+    # Static Assets Caching (React SPA Assets)
+    location /dist/ {
+        expires 30d;
+        add_header Cache-Control "public, no-transform";
+        try_files $uri =404;
+    }
+
+    # Deny access to hidden files (.env, .git) and sensitive files
+    location ~ /\.(?!well-known).* {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+
+    location ~* \.(sql|sqlite|log|md|yml|yaml|ini|sh|bat)$ {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+
+    # Front Controller Routing
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    # PHP-FPM Execution Handler
+    location ~ \.php$ {
+        try_files $uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        
+        # PHP-FPM Socket / TCP (adjust PHP version as installed, e.g. php8.5-fpm)
+        fastcgi_pass unix:/run/php/php8.5-fpm.sock;
+        # fastcgi_pass 127.0.0.1:9000;
+        
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        fastcgi_param DOCUMENT_ROOT $realpath_root;
+        fastcgi_param HTTP_PROXY ""; # Mitigate HTTPoxy vulnerability
+        
+        # Buffer and timeout settings
+        fastcgi_buffer_size 128k;
+        fastcgi_buffers 256 16k;
+        fastcgi_busy_buffers_size 256k;
+        fastcgi_temp_file_write_size 256k;
+        fastcgi_read_timeout 60s;
+    }
+}

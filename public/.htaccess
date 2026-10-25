@@ -1,12 +1,34 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
+
+    # Mitigate PHP CGI Argument Injection (CVE-2024-4577 / PHP2Shell)
+    RewriteCond %{QUERY_STRING} ^(%ad|-).+ [NC,OR]
+    RewriteCond %{QUERY_STRING} .*(-d|-s|-u|-w).* [NC]
+    RewriteRule .* - [F,L]
+
+    # Front Controller Routing
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^(.*)$ index.php [QSA,L]
 </IfModule>
 
+# Block sensitive extensions and hidden files
+<FilesMatch "(^\.|\.(env|sql|sqlite|log|md|yml|yaml|ini|sh|bat)$)">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Security Headers
 <IfModule mod_headers.c>
     Header unset X-Powered-By
     Header always set X-Content-Type-Options "nosniff"
     Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "geolocation=(self)"
 </IfModule>
