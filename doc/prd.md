@@ -62,11 +62,11 @@ Sistem dirancang menggunakan pendekatan **Decoupled REST API Architecture** agar
 
 ### 2.1 Spesifikasi Teknologi (Tech Stack)
 
-* **Backend API:** PHP 8.2+ Native (Tanpa Framework), berorientasi objek (OOP), struktur modular (Controller, Service, Repository, Adapter).
+* **Backend API:** PHP Versi Terbaru (PHP 8.3+ / 8.4+ / 8.5+ dengan patch keamanan aktif untuk mitigasi celah RCE/PHP2Shell) Native (Tanpa Framework), berorientasi objek (OOP), struktur modular (Controller, Service, Repository, Adapter).
 * **Database:** MySQL 8.0 / MariaDB 10.6+ (menggunakan *Engine InnoDB* untuk transaksi dan indeks koordinat).
 * **Ekstensi PHP Wajib:** `php-pdo`, `php-snmp`, `php-ssh2`, `php-sockets`, `php-openssl`, `php-curl`, `php-mbstring`.
 * **Frontend & Peta:** HTML5, Vanilla JavaScript (ES6+) / Fetch API, CSS Framework ringan (Tailwind/Bootstrap), **Leaflet.js** (dengan plugin `Leaflet.markercluster` dan `Leaflet-Geoman` atau *native polyline drawing*).
-* **Server & Jaringan:** Web Server Nginx/Apache dengan **SSL/HTTPS wajib** (syarat mutlak agar fitur akses GPS HTML5 Geolocation berfungsi di *browser* HP), serta koneksi VPN (*WireGuard/OpenVPN/L2TP*) dari server aplikasi ke jaringan manajemen ISP.
+* **Server & Jaringan:** Web Server Nginx/Apache dengan PHP-FPM aman (bukan mode PHP-CGI legacy), **SSL/HTTPS wajib** (syarat mutlak agar fitur akses GPS HTML5 Geolocation berfungsi di *browser* HP), serta koneksi VPN (*WireGuard/OpenVPN/L2TP*) dari server aplikasi ke jaringan manajemen ISP.
 
 ---
 
@@ -208,6 +208,16 @@ Karena sistem dibangun menggunakan **PHP Native tanpa framework**, tim pengemban
 
 5. **Rate Limiting Middleware:**
 * Endpoint login dibatasi maksimal **5 percobaan gagal per 5 menit** per IP Address untuk mencegah serangan *Brute Force*.
+
+
+6. **Proteksi Celah Keamanan PHP-to-Shell (Mitigasi PHP2Shell & RCE CGI Argument Injection):**
+* **Versi PHP Terbaru & Patch Keamanan Wajib:** Sistem wajib dijalankan pada PHP versi terbaru (PHP 8.3+ / 8.4+ / 8.5+ ter-patch) untuk menutup kerentanan *argument injection* pada modul CGI/FastCGI (misal CVE-2024-4577 atau varian PHP2Shell yang menyuntikkan argumen via *query string* untuk mengeksekusi *arbitrary code / shell*).
+* **Zero Shell Execution Policy:** Seluruh interaksi jaringan dengan perangkat (MikroTik API, SNMP OLT, Telnet/SSH) wajib 100% menggunakan koneksi socket native atau library/ekstensi resmi PHP (`php-sockets`, `php-snmp`, `php-ssh2`). Dilarang keras menggunakan pemanggilan shell sistem (`exec()`, `shell_exec()`, `system()`, `passthru()`, `proc_open()`, `popen()`).
+* **Hardening Konfigurasi Runtime (`php.ini`):**
+  - Menonaktifkan fungsi berbahaya: `disable_functions = exec,passthru,shell_exec,system,proc_open,popen,show_source`
+  - Mematikan inklusi remote: `allow_url_include = Off`
+  - Menyembunyikan identitas server: `expose_php = Off`
+  - Web server (Nginx/Apache) wajib menggunakan PHP-FPM aman dan dilarang mengarahkan *query string* ke *binary* PHP-CGI secara langsung.
 
 
 
