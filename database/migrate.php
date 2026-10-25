@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../src/Services/CryptoService.php';
 
 echo "=== NMS-GIS ISP Database Migration Runner ===\n";
 
@@ -280,6 +281,29 @@ try {
         echo "      Successfully seeded sample GIS topology and device status.\n";
     } else {
         echo "      GIS nodes already present ({$nodeCount} nodes).\n";
+    }
+
+    // Seed default network devices if none exist
+    $devCount = (int)$pdo->query("SELECT COUNT(*) FROM network_devices")->fetchColumn();
+    if ($devCount === 0) {
+        echo "  -> Seeding default network devices...\n";
+        $commEnc = CryptoService::encrypt('public');
+        $passEnc = CryptoService::encrypt('admin123');
+        $insertDev = $pdo->prepare("
+            INSERT INTO network_devices (
+                device_name, device_type, vendor_driver, ip_address, 
+                api_port, snmp_port, username_enc, password_enc, snmp_community_enc, is_online
+            ) VALUES (
+                :name, 'olt', 'zte_c320', '127.0.0.1', 
+                8728, 161, null, :pass, :comm, 1
+            )
+        ");
+        $insertDev->execute([
+            ':name' => 'OLT-ZTE-C320-CENTRAL',
+            ':pass' => $passEnc,
+            ':comm' => $commEnc
+        ]);
+        echo "      Successfully seeded default OLT device.\n";
     }
 
     echo "=== Migration & Seeding Completed Successfully! ===\n";

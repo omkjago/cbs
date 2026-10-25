@@ -54,7 +54,7 @@ final class LogPurgeService
             return 0;
         }
 
-        $days = $stats['retention_days'];
+        $days = (int)$stats['retention_days'];
         $driver = strtolower((string)env('DB_DRIVER', 'mysql'));
 
         if ($driver === 'sqlite') {
@@ -62,10 +62,9 @@ final class LogPurgeService
             $stmt = $pdo->prepare($sql);
             $stmt->execute([':days' => $days]);
         } else {
-            // MySQL / MariaDB
-            $sql = "DELETE FROM monitoring_temp_logs WHERE created_at < NOW() - INTERVAL :days DAY";
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute([':days' => $days]);
+            // MySQL / MariaDB - Safe parameterized date subtraction
+            $sql = "DELETE FROM monitoring_temp_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL " . $days . " DAY)";
+            $stmt = $pdo->query($sql);
         }
 
         return $stmt->rowCount();
