@@ -18,8 +18,12 @@ CorsMiddleware::handle();
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
-// If root is accessed, serve or redirect to app.html
+// If root is accessed, serve React SPA or fallback app.html
 if ($uri === '/' || $uri === '/index.php' || $uri === '/app') {
+    if (file_exists(__DIR__ . '/dist/index.html')) {
+        include __DIR__ . '/dist/index.html';
+        exit;
+    }
     if (file_exists(__DIR__ . '/app.html')) {
         include __DIR__ . '/app.html';
         exit;
