@@ -65,7 +65,8 @@ Sistem dirancang menggunakan pendekatan **Decoupled REST API Architecture** agar
 * **Backend API:** PHP Versi Terbaru (PHP 8.3+ / 8.4+ / 8.5+ dengan patch keamanan aktif untuk mitigasi celah RCE/PHP2Shell) Native (Tanpa Framework), berorientasi objek (OOP), struktur modular (Controller, Service, Repository, Adapter).
 * **Database:** MySQL 8.0 / MariaDB 10.6+ (menggunakan *Engine InnoDB* untuk transaksi dan indeks koordinat).
 * **Ekstensi PHP Wajib:** `php-pdo`, `php-snmp`, `php-ssh2`, `php-sockets`, `php-openssl`, `php-curl`, `php-mbstring`.
-* **Frontend & Peta:** HTML5, Vanilla JavaScript (ES6+) / Fetch API, CSS Framework ringan (Tailwind/Bootstrap), **Leaflet.js** (dengan plugin `Leaflet.markercluster` dan `Leaflet-Geoman` atau *native polyline drawing*).
+* **Frontend & Peta:** React SPA (Vite + React), Leaflet.js / React-Leaflet, TailwindCSS, REST API Client dengan integrasi JWT Bearer token & Live GIS Map.
+* **CI/CD & Deployment:** GitHub Actions Pipeline untuk Automated Testing (PHP syntax & Unit Tests, Frontend build) dan Automated Continuous Deployment (CD) ke server hosting via SSH / rsync / FTP.
 * **Server & Jaringan:** Web Server Nginx/Apache dengan PHP-FPM aman (bukan mode PHP-CGI legacy), **SSL/HTTPS wajib** (syarat mutlak agar fitur akses GPS HTML5 Geolocation berfungsi di *browser* HP), serta koneksi VPN (*WireGuard/OpenVPN/L2TP*) dari server aplikasi ke jaringan manajemen ISP.
 
 ---
