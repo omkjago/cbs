@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 
 const escapeHtml = (unsafe) => {
@@ -11,6 +11,34 @@ const escapeHtml = (unsafe) => {
     .replace(/'/g, '&#039;');
 };
 
+// Euclidean/Geodesic distance from a point P to a line segment P1-P2
+function distanceToSegment(p, p1, p2) {
+  const x = p.lng, y = p.lat;
+  const x1 = p1.lng, y1 = p1.lat;
+  const x2 = p2.lng, y2 = p2.lat;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  if (dx === 0 && dy === 0) {
+    return Math.hypot(x - x1, y - y1);
+  }
+  const t = Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy)));
+  const projX = x1 + t * dx;
+  const projY = y1 + t * dy;
+  return Math.hypot(x - projX, y - projY);
+}
+
+// Calculate total polyline distance in meters
+function calculatePolylineMeters(waypoints) {
+  if (!waypoints || waypoints.length < 2) return 0;
+  let total = 0;
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const p1 = L.latLng(waypoints[i][0], waypoints[i][1]);
+    const p2 = L.latLng(waypoints[i + 1][0], waypoints[i + 1][1]);
+    total += p1.distanceTo(p2);
+  }
+  return Math.round(total);
+}
+
 export default function GisMap({
   nodes = [],
   cables = [],
@@ -20,7 +48,10 @@ export default function GisMap({
   focusCoords = null,
   onPickerMove = null,
   onUpdateCoords = null,
-  onLiveOpm = null
+  onLiveOpm = null,
+  onUpdateCableWaypoints = null,
+  onDeleteCable = null,
+  onToast = null
 }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
@@ -28,6 +59,24 @@ export default function GisMap({
   const cablesRef = useRef(new Map());
   const pickerMarkerRef = useRef(null);
   const isDraggingNodeRef = useRef(null);
+
+  // Cable Route Bending & Editing States
+  const [selectedCable, setSelectedCable] = useState(null);
+  const [editingCable, setEditingCable] = useState(null);
+  const [editingWaypoints, setEditingWaypoints] = useState([]);
+  const [isRoutingRoad, setIsRoutingRoad] = useState(false);
+
+  const vertexMarkersRef = useRef([]);
+  const isEditingRouteRef = useRef(false);
+  const editingCableIdRef = useRef(null);
+  const editingWaypointsRef = useRef([]);
+
+  // Sync refs for live event handlers
+  useEffect(() => {
+    isEditingRouteRef.current = !!editingCable;
+    editingCableIdRef.current = editingCable ? editingCable.id : null;
+    editingWaypointsRef.current = editingWaypoints;
+  }, [editingCable, editingWaypoints]);
 
   // 1. Initialize Leaflet Map
   useEffect(() => {
@@ -108,12 +157,21 @@ export default function GisMap({
     });
   };
 
+  // Vertex handle icon for interactive route bending
+  const createVertexIcon = (isEndpoint = false) => {
+    return L.divIcon({
+      className: 'vertex-handle-icon',
+      html: `<div class="vertex-handle-dot ${isEndpoint ? 'endpoint' : 'bend'}"></div>`,
+      iconSize: [16, 16],
+      iconAnchor: [8, 8]
+    });
+  };
+
   // 3. Render Nodes & Cables with In-Place Leaflet Reconciliation
   useEffect(() => {
     const map = mapInstance.current;
     if (!map) return;
 
-    // Track active cable keys to reconcile without destroying layers
     const activeCableKeys = new Set();
     const existingPairs = new Set();
 
@@ -132,15 +190,17 @@ export default function GisMap({
       const weight = cable.cable_type === 'feeder' ? 6 : cable.cable_type === 'distribution' ? 4 : 2.5;
       const existingCable = cablesRef.current.get(cableKey);
 
+      // Check if this cable is currently being edited
+      const isBeingEdited = editingCableIdRef.current === cable.id;
+
       if (existingCable && existingCable.polyline) {
-        // Only update waypoints if this cable endpoint is not currently being dragged by cursor
-        if (isDraggingNodeRef.current !== startId && isDraggingNodeRef.current !== endId) {
+        if (!isBeingEdited && isDraggingNodeRef.current !== startId && isDraggingNodeRef.current !== endId) {
           existingCable.polyline.setLatLngs(cable.waypoints);
         }
         existingCable.polyline.setStyle({
-          color: statusColor,
-          weight,
-          dashArray: cable.is_flashing ? '8, 8' : null
+          color: isBeingEdited ? '#f59e0b' : statusColor,
+          weight: isBeingEdited ? weight + 2 : weight,
+          dashArray: isBeingEdited ? '6, 6' : cable.is_flashing ? '8, 8' : null
         });
         existingCable.start_node_id = startId;
         existingCable.end_node_id = endId;
@@ -148,12 +208,53 @@ export default function GisMap({
         const polyline = L.polyline(cable.waypoints, {
           color: statusColor,
           weight,
-          opacity: 0.85,
+          opacity: 0.9,
           dashArray: cable.is_flashing ? '8, 8' : null
         }).addTo(map);
 
+        // Click Handler: Select cable or insert bend point
+        polyline.on('click', (e) => {
+          L.DomEvent.stopPropagation(e);
+
+          if (isEditingRouteRef.current && editingCableIdRef.current === cable.id) {
+            // IN EDIT MODE: Add a new bend point where clicked!
+            const clickLatLng = e.latlng;
+            const clickCoord = [
+              parseFloat(clickLatLng.lat.toFixed(7)),
+              parseFloat(clickLatLng.lng.toFixed(7))
+            ];
+
+            const currentWps = editingWaypointsRef.current;
+            let bestIndex = 1;
+            let minDistance = Infinity;
+
+            for (let i = 0; i < currentWps.length - 1; i++) {
+              const p1 = L.latLng(currentWps[i][0], currentWps[i][1]);
+              const p2 = L.latLng(currentWps[i + 1][0], currentWps[i + 1][1]);
+              const dist = distanceToSegment(clickLatLng, p1, p2);
+              if (dist < minDistance) {
+                minDistance = dist;
+                bestIndex = i + 1;
+              }
+            }
+
+            const nextWps = [
+              ...currentWps.slice(0, bestIndex),
+              clickCoord,
+              ...currentWps.slice(bestIndex)
+            ];
+
+            setEditingWaypoints(nextWps);
+            polyline.setLatLngs(nextWps);
+            if (onToast) onToast('Titik belokan ditambahkan. Geser titik untuk mengatur lekukan.', 'info');
+          } else {
+            // NORMAL MODE: Select Cable for details / route edit options
+            setSelectedCable(cable);
+          }
+        });
+
         polyline.bindTooltip(
-          `<strong>Kabel: ${cable.cable_code}</strong><br>Tipe: ${cable.cable_type} (${cable.core_count} Core)<br>Status: ${cable.current_visual_status}`,
+          `<strong>${cable.cable_code}</strong> (${cable.cable_type})<br>Panjang: ${Math.round(cable.length_meters || 0)}m | ${cable.waypoints.length > 2 ? cable.waypoints.length - 2 : 0} Lekukan`,
           { sticky: true }
         );
 
@@ -229,7 +330,6 @@ export default function GisMap({
     const activeNodeIds = new Set();
 
     nodes.forEach((node) => {
-      // Check layer filter
       let isVisible = true;
       if (node.node_type === 'CUSTOMER') {
         const isFault = node.status === 'LOS' || node.status === 'WARNING_DBM' || node.status === 'DYING_GASP';
@@ -253,7 +353,6 @@ export default function GisMap({
       const icon = createCustomIcon(node.node_type, node.status, isPulsing);
 
       if (existingMarker) {
-        // Only update coordinate if user is not actively dragging this marker
         if (isDraggingNodeRef.current !== Number(node.id)) {
           existingMarker.setLatLng([node.latitude, node.longitude]);
         }
@@ -264,12 +363,10 @@ export default function GisMap({
           draggable: true
         }).addTo(map);
 
-        // DRAGSTART: Record active dragging node
         marker.on('dragstart', () => {
           isDraggingNodeRef.current = Number(node.id);
         });
 
-        // LIVE INTERACTIVE CABLE UPDATES WHILE DRAGGING
         marker.on('drag', (e) => {
           const pos = e.target.getLatLng();
           const targetId = Number(node.id);
@@ -293,7 +390,6 @@ export default function GisMap({
           });
         });
 
-        // DRAGEND: Persist coordinates via optimistic auto-save
         marker.on('dragend', (e) => {
           isDraggingNodeRef.current = null;
           const pos = e.target.getLatLng();
@@ -302,7 +398,6 @@ export default function GisMap({
           }
         });
 
-        // Status Badge HTML
         const rxText = node.rx_power_dbm !== null ? `${node.rx_power_dbm} dBm` : '-';
         const popupContent = document.createElement('div');
         popupContent.style.minWidth = '200px';
@@ -331,17 +426,196 @@ export default function GisMap({
       }
     });
 
-    // Remove obsolete markers
     markersRef.current.forEach((marker, id) => {
       if (!activeNodeIds.has(id)) {
         map.removeLayer(marker);
         markersRef.current.delete(id);
       }
     });
-
   }, [nodes, cables, filters]);
 
-  // 4. Handle Location Picker Pin (When AddNodeModal is active)
+  // 4. Interactive Vertex Handles when Cable Route Editing is Active
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!map) return;
+
+    // Clear old vertex markers
+    vertexMarkersRef.current.forEach((m) => map.removeLayer(m));
+    vertexMarkersRef.current = [];
+
+    if (!editingCable || !editingWaypoints || editingWaypoints.length < 2) return;
+
+    const cableKey = String(editingCable.id);
+    const cableItem = cablesRef.current.get(cableKey);
+
+    editingWaypoints.forEach((wp, index) => {
+      const isEndpoint = index === 0 || index === editingWaypoints.length - 1;
+      const vIcon = createVertexIcon(isEndpoint);
+
+      const vMarker = L.marker([wp[0], wp[1]], {
+        icon: vIcon,
+        draggable: true,
+        zIndexOffset: 2000
+      }).addTo(map);
+
+      // Drag event on vertex handle
+      vMarker.on('drag', (e) => {
+        const pos = e.target.getLatLng();
+        const updated = [...editingWaypointsRef.current];
+        updated[index] = [pos.lat, pos.lng];
+        editingWaypointsRef.current = updated;
+
+        if (cableItem && cableItem.polyline) {
+          cableItem.polyline.setLatLngs(updated);
+        }
+      });
+
+      // Dragend: commit to local editing state
+      vMarker.on('dragend', () => {
+        setEditingWaypoints([...editingWaypointsRef.current]);
+      });
+
+      // Click on intermediate handle: allow deletion
+      if (!isEndpoint) {
+        vMarker.on('click', (e) => {
+          L.DomEvent.stopPropagation(e);
+          const confirmDelete = window.confirm(`Hapus titik belokan ke-${index} ini?`);
+          if (confirmDelete) {
+            const nextWps = editingWaypointsRef.current.filter((_, idx) => idx !== index);
+            setEditingWaypoints(nextWps);
+            if (cableItem && cableItem.polyline) {
+              cableItem.polyline.setLatLngs(nextWps);
+            }
+            if (onToast) onToast('Titik belokan dihapus.', 'info');
+          }
+        });
+      }
+
+      vertexMarkersRef.current.push(vMarker);
+    });
+  }, [editingCable, editingWaypoints]);
+
+  // 5. Actions: Start Route Editing
+  const startEditCableRoute = (cable) => {
+    setSelectedCable(null);
+    setEditingCable(cable);
+    setEditingWaypoints([...(cable.waypoints || [])]);
+    if (onToast) {
+      onToast(`Mode edit jalur ${cable.cable_code} aktif. Klik garis untuk menambah lekukan.`, 'info');
+    }
+  };
+
+  // Action: Route Along Road using OpenStreetMap OSRM
+  const handleRouteAlongRoad = async () => {
+    if (!editingCable || editingWaypoints.length < 2) return;
+    const startPoint = editingWaypoints[0];
+    const endPoint = editingWaypoints[editingWaypoints.length - 1];
+
+    setIsRoutingRoad(true);
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${startPoint[1]},${startPoint[0]};${endPoint[1]},${endPoint[0]}?overview=full&geometries=geojson`;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data.code === 'Ok' && data.routes && data.routes[0]) {
+        const roadPoints = data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+        setEditingWaypoints(roadPoints);
+
+        const cableKey = String(editingCable.id);
+        const cableItem = cablesRef.current.get(cableKey);
+        if (cableItem && cableItem.polyline) {
+          cableItem.polyline.setLatLngs(roadPoints);
+        }
+
+        if (onToast) {
+          onToast(`Jalur berhasil disesuaikan mengikuti ruas jalan (${roadPoints.length} titik).`, 'success');
+        }
+      } else {
+        if (onToast) onToast('Gagal menemukan rute jalan untuk koordinat ini.', 'error');
+      }
+    } catch {
+      if (onToast) onToast('Gagal menghubungi layanan routing OpenStreetMap.', 'error');
+    } finally {
+      setIsRoutingRoad(false);
+    }
+  };
+
+  // Action: Reset to straight line
+  const handleResetStraight = () => {
+    if (!editingCable || editingWaypoints.length < 2) return;
+    const straight = [editingWaypoints[0], editingWaypoints[editingWaypoints.length - 1]];
+    setEditingWaypoints(straight);
+
+    const cableKey = String(editingCable.id);
+    const cableItem = cablesRef.current.get(cableKey);
+    if (cableItem && cableItem.polyline) {
+      cableItem.polyline.setLatLngs(straight);
+    }
+    if (onToast) onToast('Jalur kabel diluruskan kembali.', 'info');
+  };
+
+  // Action: Save route waypoints
+  const handleSaveRoute = async () => {
+    if (!editingCable || !onUpdateCableWaypoints) return;
+    await onUpdateCableWaypoints(editingCable.id, editingWaypoints);
+    setEditingCable(null);
+  };
+
+  // Action: Cancel edit
+  const handleCancelEdit = () => {
+    if (editingCable) {
+      const cableKey = String(editingCable.id);
+      const cableItem = cablesRef.current.get(cableKey);
+      if (cableItem && cableItem.polyline) {
+        cableItem.polyline.setLatLngs(editingCable.waypoints);
+        cableItem.polyline.setStyle({
+          color: editingCable.status_color || '#10B981',
+          weight: editingCable.cable_type === 'feeder' ? 6 : editingCable.cable_type === 'distribution' ? 4 : 2.5,
+          dashArray: editingCable.is_flashing ? '8, 8' : null
+        });
+      }
+    }
+    setEditingCable(null);
+    setEditingWaypoints([]);
+    if (onToast) onToast('Pengeditan jalur kabel dibatalkan.', 'info');
+  };
+
+  // Action: Direct OSRM from popup
+  const directRoadRoute = async (cable) => {
+    if (!cable.waypoints || cable.waypoints.length < 2) return;
+    const p1 = cable.waypoints[0];
+    const p2 = cable.waypoints[cable.waypoints.length - 1];
+
+    if (onToast) onToast('Menyesuaikan rute mengikuti ruas jalan raya...', 'info');
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${p1[1]},${p1[0]};${p2[1]},${p2[0]}?overview=full&geometries=geojson`;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data.code === 'Ok' && data.routes && data.routes[0]) {
+        const roadPoints = data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+        setSelectedCable(null);
+        if (onUpdateCableWaypoints) {
+          await onUpdateCableWaypoints(cable.id, roadPoints);
+        }
+      } else {
+        if (onToast) onToast('Rute jalan tidak ditemukan.', 'error');
+      }
+    } catch {
+      if (onToast) onToast('Layanan routing OSRM tidak merespons.', 'error');
+    }
+  };
+
+  // Action: Delete cable
+  const confirmDeleteCable = (cable) => {
+    const ok = window.confirm(`Apakah Anda yakin ingin menghapus jalur kabel ${cable.cable_code}?`);
+    if (ok && onDeleteCable) {
+      setSelectedCable(null);
+      onDeleteCable(cable.id);
+    }
+  };
+
+  // Location Picker Pin
   useEffect(() => {
     const map = mapInstance.current;
     if (!map) return;
@@ -378,5 +652,141 @@ export default function GisMap({
     }
   }, [isPicking, pickerCoords]);
 
-  return <div ref={mapRef} className="map-container" />;
+  return (
+    <div className="map-viewport-wrapper">
+      <div ref={mapRef} className="map-container" />
+
+      {/* Floating Cable Route Editor Toolbar */}
+      {editingCable && (
+        <div className="cable-editor-bar">
+          <div className="cable-editor-left">
+            <span className="cable-editor-mode-badge">[MODE EDIT BELOKAN JALUR]</span>
+            <div className="cable-editor-title">
+              <strong>{editingCable.cable_code}</strong>
+              <span className="cable-editor-meta">
+                ({editingWaypoints.length} Titik |{' '}
+                {editingWaypoints.length > 2 ? editingWaypoints.length - 2 : 0} Lekukan |{' '}
+                {calculatePolylineMeters(editingWaypoints)} m)
+              </span>
+            </div>
+            <span className="cable-editor-hint">
+              Klik garis kabel untuk menambah belokan. Geser lingkaran oranye untuk meliukkan rute jalan.
+            </span>
+          </div>
+
+          <div className="cable-editor-right">
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={handleRouteAlongRoad}
+              disabled={isRoutingRoad}
+              title="Sesuaikan rute kabel otomatis mengikuti ruas jalan OpenStreetMap"
+            >
+              {isRoutingRoad ? 'Mengambil Rute Jalan...' : 'Rute Ikuti Jalan (OSRM)'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={handleResetStraight}
+              title="Reset ke garis lurus antar titik ujung"
+            >
+              Luruskan
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={handleSaveRoute}
+              title="Simpan koordinat belokan ke database"
+            >
+              Simpan Jalur
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={handleCancelEdit}
+              title="Batalkan pengeditan rute"
+            >
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Selected Cable Detail Card */}
+      {selectedCable && !editingCable && (
+        <div className="cable-detail-card">
+          <div className="cable-detail-header">
+            <div className="cable-detail-badge-row">
+              <span className={`cable-type-tag ${selectedCable.cable_type}`}>
+                {selectedCable.cable_type.toUpperCase()}
+              </span>
+              <strong>{selectedCable.cable_code}</strong>
+            </div>
+            <button
+              type="button"
+              className="cable-detail-close"
+              onClick={() => setSelectedCable(null)}
+              title="Tutup"
+            >
+              &times;
+            </button>
+          </div>
+
+          <div className="cable-detail-body">
+            <div className="cable-stat-grid">
+              <div className="cable-stat-item">
+                <span className="stat-label">Panjang Fisik</span>
+                <span className="stat-val">{Math.round(selectedCable.length_meters || 0)} m</span>
+              </div>
+              <div className="cable-stat-item">
+                <span className="stat-label">Jumlah Core</span>
+                <span className="stat-val">{selectedCable.core_count} Core</span>
+              </div>
+              <div className="cable-stat-item">
+                <span className="stat-label">Titik Belokan</span>
+                <span className="stat-val">
+                  {(selectedCable.waypoints || []).length > 2
+                    ? `${selectedCable.waypoints.length - 2} Lekukan`
+                    : 'Garis Lurus'}
+                </span>
+              </div>
+              <div className="cable-stat-item">
+                <span className="stat-label">Status Visual</span>
+                <span className="stat-val" style={{ color: selectedCable.status_color || '#10b981' }}>
+                  {selectedCable.current_visual_status}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="cable-detail-actions">
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => startEditCableRoute(selectedCable)}
+              title="Aktifkan mode interaktif untuk membelokkan rute kabel pada peta"
+            >
+              Edit Belokan Jalur
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => directRoadRoute(selectedCable)}
+              title="Otomatis sesuaikan jalur mengikuti ruas jalan OpenStreetMap"
+            >
+              Ikuti Jalan (OSRM)
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              onClick={() => confirmDeleteCable(selectedCable)}
+              title="Hapus jalur kabel dari sistem"
+            >
+              Hapus Kabel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { IconPlus, IconRefresh, IconMenu } from './Icons';
+import { IconPlus, IconRefresh, IconMenu, IconCable } from './Icons';
 
 export default function Topbar({
   currentView,
   onOpenAddNode,
+  onOpenAddCable,
   onRefresh,
   onLogout,
   onOpenLogin,
@@ -115,6 +116,16 @@ export default function Topbar({
             >
               <IconRefresh size={14} />
               <span>Segarkan</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={onOpenAddCable}
+              title="Tarik jalur kabel fiber optik baru antar infrastruktur"
+            >
+              <IconCable size={14} />
+              <span>Tarik Kabel FO</span>
             </button>
 
             <button
