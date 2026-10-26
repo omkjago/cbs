@@ -492,8 +492,8 @@ final class GisController
 
         try {
             $pdo = Database::getConnection();
-            $checkStmt = $pdo->prepare("SELECT id, node_type FROM gis_nodes WHERE id = :id LIMIT 1");
-            $checkStmt->execute([':id' => $id]);
+            $checkStmt = $pdo->prepare("SELECT id, node_type FROM gis_nodes WHERE id = ? LIMIT 1");
+            $checkStmt->execute([$id]);
             $node = $checkStmt->fetch();
 
             if (!$node) {
@@ -503,7 +503,7 @@ final class GisController
             }
 
             $fields = [];
-            $params = [':id' => $id];
+            $values = [];
 
             if (isset($input['latitude'])) {
                 $lat = (float)$input['latitude'];
@@ -512,8 +512,8 @@ final class GisController
                     echo json_encode(['status' => 'error', 'message' => 'Latitude tidak valid.']);
                     return;
                 }
-                $fields[] = 'latitude = :lat';
-                $params[':lat'] = $lat;
+                $fields[] = 'latitude = ?';
+                $values[] = $lat;
             }
 
             if (isset($input['longitude'])) {
@@ -523,29 +523,29 @@ final class GisController
                     echo json_encode(['status' => 'error', 'message' => 'Longitude tidak valid.']);
                     return;
                 }
-                $fields[] = 'longitude = :lng';
-                $params[':lng'] = $lng;
+                $fields[] = 'longitude = ?';
+                $values[] = $lng;
             }
 
             if (isset($input['node_name'])) {
-                $fields[] = 'node_name = :name';
-                $params[':name'] = trim((string)$input['node_name']);
+                $fields[] = 'node_name = ?';
+                $values[] = trim((string)$input['node_name']);
             }
 
             if (isset($input['address_note'])) {
-                $fields[] = 'address_note = :note';
-                $params[':note'] = trim((string)$input['address_note']);
+                $fields[] = 'address_note = ?';
+                $values[] = trim((string)$input['address_note']);
             }
 
-            if (isset($input['parent_node_id'])) {
+            if (array_key_exists('parent_node_id', $input)) {
                 $parentId = !empty($input['parent_node_id']) ? (int)$input['parent_node_id'] : null;
-                $fields[] = 'parent_node_id = :parent_id';
-                $params[':parent_id'] = $parentId;
+                $fields[] = 'parent_node_id = ?';
+                $values[] = $parentId;
             }
 
             if (isset($input['input_method'])) {
-                $fields[] = 'input_method = :method';
-                $params[':method'] = (string)$input['input_method'];
+                $fields[] = 'input_method = ?';
+                $values[] = (string)$input['input_method'];
             }
 
             if (empty($fields)) {
@@ -554,14 +554,16 @@ final class GisController
                 return;
             }
 
-            $sql = "UPDATE gis_nodes SET " . implode(', ', $fields) . " WHERE id = :id";
-            $updateStmt = $pdo->prepare($sql);
-            $updateStmt->execute($params);
+            $sql = "UPDATE gis_nodes SET " . implode(', ', $fields) . " WHERE id = ?";
+            $values[] = $id;
 
-            // Update waypoints of all connected cables in real time
+            $updateStmt = $pdo->prepare($sql);
+            $updateStmt->execute($values);
+
+            // Synchronize connected FO cables waypoints
             if (isset($input['latitude']) || isset($input['longitude'])) {
-                $posStmt = $pdo->prepare("SELECT latitude, longitude FROM gis_nodes WHERE id = :id LIMIT 1");
-                $posStmt->execute([':id' => $id]);
+                $posStmt = $pdo->prepare("SELECT latitude, longitude FROM gis_nodes WHERE id = ? LIMIT 1");
+                $posStmt->execute([$id]);
                 $pos = $posStmt->fetch();
                 if ($pos) {
                     $curLat = (float)$pos['latitude'];
@@ -570,25 +572,28 @@ final class GisController
                     $cablesStmt = $pdo->prepare("
                         SELECT id, start_node_id, end_node_id, waypoints_json 
                         FROM gis_cables 
-                        WHERE start_node_id = :id OR end_node_id = :id
+                        WHERE start_node_id = ? OR end_node_id = ?
                     ");
-                    $cablesStmt->execute([':id' => $id]);
+                    $cablesStmt->execute([$id, $id]);
                     $connectedCables = $cablesStmt->fetchAll();
+
+                    $updCbl = $pdo->prepare("UPDATE gis_cables SET waypoints_json = ? WHERE id = ?");
 
                     foreach ($connectedCables as $cRow) {
                         $wps = is_string($cRow['waypoints_json']) ? json_decode($cRow['waypoints_json'], true) : $cRow['waypoints_json'];
                         if (is_array($wps) && count($wps) >= 2) {
+                            $changed = false;
                             if ((int)$cRow['start_node_id'] === $id) {
                                 $wps[0] = [$curLat, $curLng];
+                                $changed = true;
                             }
                             if ((int)$cRow['end_node_id'] === $id) {
                                 $wps[count($wps) - 1] = [$curLat, $curLng];
+                                $changed = true;
                             }
-                            $updCbl = $pdo->prepare("UPDATE gis_cables SET waypoints_json = :wps WHERE id = :cid");
-                            $updCbl->execute([
-                                ':wps' => json_encode($wps),
-                                ':cid' => $cRow['id']
-                            ]);
+                            if ($changed) {
+                                $updCbl->execute([json_encode($wps), $cRow['id']]);
+                            }
                         }
                     }
                 }
