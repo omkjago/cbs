@@ -1,17 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import Navbar from './components/Navbar';
-import KpiCards from './components/KpiCards';
-import LayerFilter from './components/LayerFilter';
+import Sidebar from './components/Sidebar';
+import Topbar from './components/Topbar';
+import NocDashboard from './components/NocDashboard';
+import FaultCenter from './components/FaultCenter';
+import InventoryView from './components/InventoryView';
+import DevicesView from './components/DevicesView';
+import LogsView from './components/LogsView';
+import SettingsView from './components/SettingsView';
 import GisMap from './components/GisMap';
-import InteractiveDashboard from './components/InteractiveDashboard';
+import LayerFilter from './components/LayerFilter';
+import KpiCards from './components/KpiCards';
+import FaultAlertBanner from './components/FaultAlertBanner';
 import AddNodeModal from './components/AddNodeModal';
 import LoginModal from './components/LoginModal';
-import FaultAlertBanner from './components/FaultAlertBanner';
 import { Api } from './services/api';
 
 export default function App() {
   const [user, setUser] = useState(Api.getUser());
-  const [activeTab, setActiveTab] = useState('map'); // 'map' | 'dashboard'
+  const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' | 'map' | 'faults' | 'inventory' | 'devices' | 'logs' | 'settings'
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isMapFilterOpen, setIsMapFilterOpen] = useState(true);
+
   const [mapData, setMapData] = useState({ nodes: [], cables: [], summary: {}, suspected_fiber_cuts: [] });
   const [filters, setFilters] = useState({
     POP: true,
@@ -21,7 +31,7 @@ export default function App() {
     CUSTOMER_NORMAL: true,
     CUSTOMER_FAULT: true
   });
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isAddNodeOpen, setIsAddNodeOpen] = useState(false);
   const [coords, setCoords] = useState({ lat: -6.991, lng: 110.423 });
@@ -67,7 +77,7 @@ export default function App() {
   const handleLoginSuccess = async (email, password) => {
     const res = await Api.login(email, password);
     setUser(res.data.user);
-    showToast('Autentikasi berhasil. Selamat datang di NMS-GIS.', 'success');
+    showToast('Autentikasi berhasil. Selamat datang di NMS-GIS Enterprise.', 'success');
     loadMapData();
   };
 
@@ -79,7 +89,22 @@ export default function App() {
     setIsLoginOpen(true);
   };
 
-  // Location Sync Handler
+  const handleSelectView = (view) => {
+    setCurrentView(view);
+    setIsMobileSidebarOpen(false);
+    if (view === 'map') {
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 150);
+    }
+  };
+
+  const handleFocusNode = (lat, lng) => {
+    setCurrentView('map');
+    setFocusCoords({ lat, lng });
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 150);
+  };
+
   const handlePickerMove = (lat, lng, method) => {
     setCoords({ lat: parseFloat(lat).toFixed(7), lng: parseFloat(lng).toFixed(7) });
     setInputMethod(method);
@@ -124,11 +149,11 @@ export default function App() {
   };
 
   const handleLiveOpm = (node) => {
-    Api.getLiveOpm(node.id).then(res => {
-      const rx = res.data?.rx_power_dbm !== null ? `${res.data.rx_power_dbm} dBm` : 'N/A';
+    Api.getLiveOpm(node.id).then((res) => {
+      const rx = res.data?.rx_power_dbm !== null ? `${res.data.rx_power_dbm} dBm` : '-';
       showToast(`[OPM] ${node.node_code}: Rx Power = ${rx} (Status: ${res.data?.connection_status})`, 'success');
       loadMapData();
-    }).catch(err => showToast(err.message, 'error'));
+    }).catch((err) => showToast(err.message, 'error'));
   };
 
   const handleCreateNode = async (nodeData) => {
@@ -137,90 +162,160 @@ export default function App() {
     loadMapData();
   };
 
-  const handleFocusNodeFromDashboard = (lat, lng) => {
-    setActiveTab('map');
-    setFocusCoords({ lat, lng });
-    setTimeout(() => {
-      window.dispatchEvent(new Event('resize'));
-    }, 150);
+  const handleDeleteNode = async (id) => {
+    try {
+      const res = await Api.deleteNode(id);
+      showToast(res.message || 'Titik berhasil dihapus.', 'success');
+      loadMapData();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
   };
 
   const parentCandidates = (mapData.nodes || []).filter((n) => n.node_type !== 'CUSTOMER');
+  const faultCount = (mapData.suspected_fiber_cuts || []).length;
+  const nodeCount = (mapData.nodes || []).length;
 
   return (
-    <div className="app-layout">
-      <Navbar
+    <div className="app-shell">
+      {/* 1. Collapsible Enterprise Sidebar */}
+      <Sidebar
+        currentView={currentView}
+        onSelectView={handleSelectView}
         user={user}
-        activeTab={activeTab}
-        onSelectTab={(tab) => {
-          setActiveTab(tab);
-          if (tab === 'map') {
-            setTimeout(() => window.dispatchEvent(new Event('resize')), 150);
-          }
-        }}
-        onOpenAddNode={() => setIsAddNodeOpen(true)}
-        onOpenLogin={() => setIsLoginOpen(true)}
-        onLogout={handleLogout}
+        nodeCount={nodeCount}
+        faultCount={faultCount}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
       />
 
-      {/* VIEW: PETA GIS */}
-      <main className="main-container" style={{ display: activeTab === 'map' ? 'flex' : 'none' }}>
-        <aside className={`floating-panel ${!isSidebarOpen ? 'collapsed' : ''}`}>
-          <div className="panel-header">
-            <span>Monitoring & Layer</span>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              title={isSidebarOpen ? 'Sembunyikan Panel' : 'Buka Panel'}
-            >
-              {isSidebarOpen ? 'Tutup Panel' : 'Buka Panel'}
-            </button>
-          </div>
-
-          <div className="panel-body">
-            <FaultAlertBanner
-              faults={mapData.suspected_fiber_cuts}
-              onFocusNode={(lat, lng) => setFocusCoords({ lat, lng })}
-            />
-
-            <KpiCards summary={mapData.summary} />
-
-            <LayerFilter
-              filters={filters}
-              onToggleFilter={(key, val) => setFilters((prev) => ({ ...prev, [key]: val }))}
-            />
-          </div>
-        </aside>
-
-        <GisMap
-          nodes={mapData.nodes || []}
-          cables={mapData.cables || []}
-          filters={filters}
-          focusCoords={focusCoords}
-          isPicking={isAddNodeOpen}
-          pickerCoords={coords}
-          onPickerMove={handlePickerMove}
-          onUpdateCoords={handleUpdateCoords}
-          onLiveOpm={handleLiveOpm}
+      {/* 2. Main Content Area */}
+      <div className="app-main-viewport">
+        {/* Top Header Bar */}
+        <Topbar
+          currentView={currentView}
+          onOpenAddNode={() => setIsAddNodeOpen(true)}
+          onRefresh={loadMapData}
+          onLogout={handleLogout}
+          onOpenLogin={() => setIsLoginOpen(true)}
+          user={user}
+          faultCount={faultCount}
+          onToggleSidebarMobile={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
         />
-      </main>
 
-      {/* VIEW: INTERACTIVE DASHBOARD */}
-      {activeTab === 'dashboard' && (
-        <main className="dashboard-main-container">
-          <InteractiveDashboard
-            nodes={mapData.nodes || []}
-            cables={mapData.cables || []}
-            summary={mapData.summary || {}}
-            faults={mapData.suspected_fiber_cuts || []}
-            onFocusNode={handleFocusNodeFromDashboard}
-            onOpenAddNode={() => setIsAddNodeOpen(true)}
-            onRefresh={loadMapData}
-            onToast={showToast}
-          />
-        </main>
-      )}
+        {/* Dynamic View Router */}
+        <div className="app-view-container">
+          {/* VIEW: NOC DASHBOARD */}
+          {currentView === 'dashboard' && (
+            <div className="view-scrollable">
+              <NocDashboard
+                nodes={mapData.nodes || []}
+                cables={mapData.cables || []}
+                summary={mapData.summary || {}}
+                faults={mapData.suspected_fiber_cuts || []}
+                onFocusNode={handleFocusNode}
+                onSelectView={handleSelectView}
+                onOpenAddNode={() => setIsAddNodeOpen(true)}
+                onLiveOpm={handleLiveOpm}
+                onToast={showToast}
+              />
+            </div>
+          )}
+
+          {/* VIEW: PETA GIS FULLSCREEN */}
+          <div
+            className="view-map-fullscreen"
+            style={{ display: currentView === 'map' ? 'flex' : 'none' }}
+          >
+            <aside className={`floating-map-panel ${!isMapFilterOpen ? 'collapsed' : ''}`}>
+              <div className="panel-header">
+                <span>Filter Layer &amp; Topologi</span>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setIsMapFilterOpen(!isMapFilterOpen)}
+                >
+                  {isMapFilterOpen ? 'Tutup Panel' : 'Buka Panel'}
+                </button>
+              </div>
+
+              <div className="panel-body">
+                <FaultAlertBanner
+                  faults={mapData.suspected_fiber_cuts || []}
+                  onFocusNode={(lat, lng) => setFocusCoords({ lat, lng })}
+                />
+
+                <KpiCards summary={mapData.summary || {}} />
+
+                <LayerFilter
+                  filters={filters}
+                  onToggleFilter={(key, val) => setFilters((prev) => ({ ...prev, [key]: val }))}
+                />
+              </div>
+            </aside>
+
+            <GisMap
+              nodes={mapData.nodes || []}
+              cables={mapData.cables || []}
+              filters={filters}
+              focusCoords={focusCoords}
+              isPicking={isAddNodeOpen}
+              pickerCoords={coords}
+              onPickerMove={handlePickerMove}
+              onUpdateCoords={handleUpdateCoords}
+              onLiveOpm={handleLiveOpm}
+            />
+          </div>
+
+          {/* VIEW: PUSAT GANGGUAN */}
+          {currentView === 'faults' && (
+            <div className="view-scrollable">
+              <FaultCenter
+                faults={mapData.suspected_fiber_cuts || []}
+                onFocusNode={handleFocusNode}
+                onRefresh={loadMapData}
+                onToast={showToast}
+              />
+            </div>
+          )}
+
+          {/* VIEW: INVENTARIS INFRASTRUKTUR */}
+          {currentView === 'inventory' && (
+            <div className="view-scrollable">
+              <InventoryView
+                nodes={mapData.nodes || []}
+                onOpenAddNode={() => setIsAddNodeOpen(true)}
+                onFocusNode={handleFocusNode}
+                onLiveOpm={handleLiveOpm}
+                onDeleteNode={handleDeleteNode}
+                onRefresh={loadMapData}
+                onToast={showToast}
+              />
+            </div>
+          )}
+
+          {/* VIEW: PERANGKAT OLT & ROUTER */}
+          {currentView === 'devices' && (
+            <div className="view-scrollable">
+              <DevicesView onToast={showToast} />
+            </div>
+          )}
+
+          {/* VIEW: LOG TELEMETRI & PEMELIHARAAN */}
+          {currentView === 'logs' && (
+            <div className="view-scrollable">
+              <LogsView onToast={showToast} />
+            </div>
+          )}
+
+          {/* VIEW: PENGATURAN & EKSTENSI */}
+          {currentView === 'settings' && (
+            <div className="view-scrollable">
+              <SettingsView onToast={showToast} />
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* MODALS */}
       <LoginModal
