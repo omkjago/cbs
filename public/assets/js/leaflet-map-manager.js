@@ -191,14 +191,14 @@ class LeafletMapManager {
                 <div style="font-size:11px; color:#64748b; margin-bottom:8px;">Kode: <strong>${this.escapeHtml(node.node_code)}</strong> (${this.escapeHtml(node.node_type)})</div>
                 <div style="font-size:12px; margin-bottom:6px;">Status: ${statusBadge}</div>
                 <div style="font-size:12px; margin-bottom:4px;">Rx Power (OPM): <strong>${rxPowerText}</strong></div>
-                ${node.address_note ? `<div style="font-size:11px; color:#475569; margin-top:4px;">📍 <em>${this.escapeHtml(node.address_note)}</em></div>` : ''}
+                ${node.address_note ? `<div style="font-size:11px; color:#475569; margin-top:4px;"> <em>${this.escapeHtml(node.address_note)}</em></div>` : ''}
                 <hr style="border:none; border-top:1px solid #e2e8f0; margin:8px 0;">
                 <div style="display:flex; gap:6px;">
                     <button onclick="window.checkLiveOpm(${node.id})" style="flex:1; background:#2563eb; color:white; border:none; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer;">
-                        ⚡ Cek OPM Live
+                         Cek OPM Live
                     </button>
                     <a href="https://www.google.com/maps/dir/?api=1&destination=${node.latitude},${node.longitude}" target="_blank" style="text-decoration:none; background:#10b981; color:white; border-radius:4px; padding:4px 8px; font-size:11px; display:flex; align-items:center;">
-                        🗺️ Navigasi
+                         Navigasi
                     </a>
                 </div>
             </div>

@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
-        toast.innerHTML = `<span>${type === 'success' ? '✅' : (type === 'error' ? '❌' : 'ℹ️')}</span> <span>${message}</span>`;
+        toast.innerHTML = `<span>${type === 'success' ? '' : (type === 'error' ? '' : '')}</span> <span>${message}</span>`;
         container.appendChild(toast);
 
         setTimeout(() => {

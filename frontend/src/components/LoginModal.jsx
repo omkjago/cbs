@@ -25,52 +25,56 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
 
   return (
     <div className="modal-overlay">
-      <div className="modal-card">
+      <div className="modal-card" style={{ maxWidth: '420px' }}>
         <div className="modal-header">
-          <span>🔐 Masuk Sistem NMS-GIS</span>
-          <button className="btn btn-secondary btn-sm" onClick={onClose}>✕</button>
+          <span className="modal-title-text">Masuk ke Sistem NMS-GIS</span>
+          <button className="btn btn-secondary btn-sm" onClick={onClose} type="button">
+            Tutup
+          </button>
         </div>
 
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
             {error && (
-              <div style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid var(--danger)', padding: '8px', borderRadius: '6px', fontSize: '12px', color: '#fca5a5' }}>
+              <div className="alert-box-error">
                 {error}
               </div>
             )}
 
             <div className="form-group">
-              <label className="form-label">Email</label>
+              <label className="form-label">Alamat Email</label>
               <input
                 type="email"
                 className="form-input"
+                placeholder="nama@domain.isp"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                autoFocus
               />
             </div>
 
             <div className="form-group">
-              <label className="form-label">Kata Sandi</label>
+              <label className="form-label">Kata Sandi Akun</label>
               <input
                 type="password"
                 className="form-input"
+                placeholder="Masukkan kata sandi..."
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
               />
             </div>
 
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-              <em>Akun default:</em><br />
-              • Admin: <code>admin@nms.isp</code> / <code>AdminPassword123!</code><br />
-              • Teknisi: <code>teknisi@nms.isp</code> / <code>TeknisiPassword123!</code>
+            <div className="login-helper-box">
+              <span className="helper-title">Akun Bawaan Sistem:</span>
+              <div>Super Admin: <code>admin@nms.isp</code> / <code>AdminPassword123!</code></div>
             </div>
           </div>
 
           <div className="modal-footer">
             <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading}>
-              {loading ? 'Memproses...' : 'Masuk'}
+              {loading ? 'Memverifikasi...' : 'Masuk ke Sistem'}
             </button>
           </div>
         </form>
