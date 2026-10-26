@@ -15,6 +15,7 @@ require_once __DIR__ . '/../src/Adapters/ZteOltAdapter.php';
 require_once __DIR__ . '/../src/Adapters/GenericSnmpAdapter.php';
 require_once __DIR__ . '/../src/Controllers/DeviceController.php';
 require_once __DIR__ . '/../src/Controllers/MonitoringController.php';
+require_once __DIR__ . '/test_fixtures.php';
 
 echo "============================================\n";
 echo "   NMS-GIS ISP - Phase 2 Verification Suite \n";
@@ -44,6 +45,7 @@ $adminToken = JwtService::generateToken([
 $_SERVER['HTTP_AUTHORIZATION'] = "Bearer {$adminToken}";
 
 $pdo = Database::getConnection();
+TestFixtures::setup($pdo);
 
 // 1. Test Multi-Vendor Adapters
 echo "\n--- Testing Multi-Vendor Adapters ---\n";
@@ -94,37 +96,32 @@ assertTest("Device registered with ID {$devId}", $devId > 0);
 // Test Device Test Connection API
 ob_start();
 DeviceController::testDevice($devId);
-$devTestJson = ob_get_clean();
-$devTestRes = json_decode($devTestJson, true);
-assertTest("DeviceController::testDevice returns success", ($devTestRes['status'] ?? '') === 'success');
+$testJson = ob_get_clean();
+$testRes = json_decode($testJson, true);
+assertTest("DeviceController::testDevice returns success", ($testRes['status'] ?? '') === 'success');
 
-// 3. Test Live OPM On-Demand Check (FR-3.3)
+// 3. Test Live OPM On-Demand Check
 echo "\n--- Testing Live OPM On-Demand Check ---\n";
-// Find a customer node
-$custStmt = $pdo->query("SELECT id, node_code FROM gis_nodes WHERE node_type = 'CUSTOMER' LIMIT 1");
-$cust = $custStmt->fetch();
+// Ambil ID node pelanggan CUST-001 dari seeded DB
+$custStmt = $pdo->query("SELECT id FROM gis_nodes WHERE node_code = 'CUST-001' LIMIT 1");
+$custId = (int)$custStmt->fetchColumn();
 
-if ($cust) {
-    $custId = (int)$cust['id'];
-    ob_start();
-    MonitoringController::getLiveOpm($custId);
-    $opmJson = ob_get_clean();
-    $opmRes = json_decode($opmJson, true);
+ob_start();
+MonitoringController::getLiveOpm($custId);
+$opmJson = ob_get_clean();
+$opmRes = json_decode($opmJson, true);
 
-    assertTest("Live OPM returns success for {$cust['node_code']}", ($opmRes['status'] ?? '') === 'success');
-    assertTest("Live OPM data contains rx_power_dbm", isset($opmRes['data']['rx_power_dbm']));
-    assertTest("Live OPM data contains connection_status", isset($opmRes['data']['connection_status']));
+assertTest("Live OPM returns success for CUST-001", ($opmRes['status'] ?? '') === 'success');
+assertTest("Live OPM data contains rx_power_dbm", isset($opmRes['data']['rx_power_dbm']));
+assertTest("Live OPM data contains connection_status", isset($opmRes['data']['connection_status']));
 
-    // Verify database was updated
-    $chkStmt = $pdo->prepare("SELECT rx_power_dbm, connection_status FROM device_current_status WHERE node_id = :id");
-    $chkStmt->execute([':id' => $custId]);
-    $updatedStatus = $chkStmt->fetch();
-    assertTest("Database device_current_status updated with live reading", $updatedStatus !== false);
-} else {
-    echo "  [SKIP] No customer node found to test Live OPM.\n";
-}
+// Verify updated in DB
+$statusCheck = $pdo->prepare("SELECT rx_power_dbm FROM device_current_status WHERE node_id = :id");
+$statusCheck->execute([':id' => $custId]);
+$savedRx = (float)$statusCheck->fetchColumn();
+assertTest("Database device_current_status updated with live reading", $savedRx !== 0.0);
 
-// 4. Test MonitoringController::getActiveFaults
+// 4. Test Active Faults Endpoint
 echo "\n--- Testing Active Faults Endpoint ---\n";
 ob_start();
 MonitoringController::getActiveFaults();
@@ -143,15 +140,15 @@ assertTest("PollerEngine ran with 0 fatal errors", empty($cycleResults['errors']
 // 6. Test Temporary Logs & Retention Settings
 echo "\n--- Testing Temporary Logs & Retention Settings ---\n";
 // Update retention days to 14
-$tempInput = json_encode(['retention_days' => 14]);
-// Simulate update
 $pdo->prepare("UPDATE system_settings SET setting_value = '14' WHERE setting_key = 'temp_log_retention_days'")->execute();
 $retStmt = $pdo->query("SELECT setting_value FROM system_settings WHERE setting_key = 'temp_log_retention_days'");
 assertTest("Retention days setting updated to 14", (int)$retStmt->fetchColumn() === 14);
 
-// Cleanup test device
+// Cleanup test device and fixtures
 $pdo->prepare("DELETE FROM network_devices WHERE id = :id")->execute([':id' => $devId]);
 assertTest("Test device cleaned up", true);
+
+TestFixtures::cleanup($pdo);
 
 echo "\n============================================\n";
 echo "   Phase 2 Results: {$passed} Passed, {$failed} Failed\n";

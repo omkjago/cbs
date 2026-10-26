@@ -20,6 +20,7 @@ require_once __DIR__ . '/../src/Controllers/GisController.php';
 require_once __DIR__ . '/../src/Controllers/DeviceController.php';
 require_once __DIR__ . '/../src/Controllers/MonitoringController.php';
 require_once __DIR__ . '/../workers/poller_worker.php';
+require_once __DIR__ . '/test_fixtures.php';
 
 $pdo = Database::getConnection();
 $passed = 0;
@@ -101,6 +102,9 @@ $token = JwtService::generateToken(['sub' => 1, 'role' => 'super_admin'], 3600);
 $payload = JwtService::validateToken($token);
 assertCheck("JwtService: Generated token validates successfully", $payload !== null && $payload['sub'] === 1);
 assertCheck("JwtService: Payload role is super_admin", ($payload['role'] ?? '') === 'super_admin');
+
+// Setup test fixtures
+TestFixtures::setup($pdo);
 
 // -----------------------------------------------------------------------------
 // 3. Multi-Vendor Hardware Adapters
@@ -188,6 +192,9 @@ $pastDate = date('Y-m-d H:i:s', time() - (30 * 86400));
 $pdo->exec("INSERT INTO monitoring_temp_logs (node_id, previous_status, new_status, rx_power_dbm, fault_note, created_at) VALUES (1, 'ONLINE', 'LOS', -35.00, 'Test Expired Log', '{$pastDate}')");
 $purgedCount = LogPurgeService::purgeExpired($pdo);
 assertCheck("LogPurgeService: purgeExpired deletes logs older than retention period", $purgedCount >= 1);
+
+// Clean up fixtures so database stays 100% clean
+TestFixtures::cleanup($pdo);
 
 echo "\n========================================================\n";
 echo "   Master Test Results: {$passed} Passed, {$failed} Failed\n";

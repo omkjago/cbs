@@ -176,14 +176,14 @@ export default function GisMap({
         <div style="font-weight:bold; font-size:14px; margin-bottom:4px; color:#1e293b;">${escapeHtml(node.node_name)}</div>
         <div style="font-size:11px; color:#64748b; margin-bottom:8px;">Kode: <strong>${escapeHtml(node.node_code)}</strong> (${escapeHtml(node.node_type)})</div>
         <div style="font-size:12px; margin-bottom:4px; color:#1e293b;">Rx Power (OPM): <strong>${escapeHtml(rxText)}</strong></div>
-        ${node.address_note ? `<div style="font-size:11px; color:#475569; margin-top:4px;">📍 <em>${escapeHtml(node.address_note)}</em></div>` : ''}
+        ${node.address_note ? `<div style="font-size:11px; color:#475569; margin-top:4px;">Alamat: <strong>${escapeHtml(node.address_note)}</strong></div>` : ''}
         <hr style="border:none; border-top:1px solid #e2e8f0; margin:8px 0;">
         <div style="display:flex; gap:6px;">
-          <button id="btn-opm-${node.id}" style="flex:1; background:#2563eb; color:white; border:none; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer;">
-            ⚡ Cek OPM Live
+          <button id="btn-opm-${node.id}" style="flex:1; background:#2563eb; color:white; border:none; border-radius:4px; padding:6px 10px; font-size:11px; font-weight:600; cursor:pointer;">
+            Periksa OPM
           </button>
-          <a href="https://www.google.com/maps/dir/?api=1&destination=${node.latitude},${node.longitude}" target="_blank" style="text-decoration:none; background:#10b981; color:white; border-radius:4px; padding:4px 8px; font-size:11px; display:flex; align-items:center;">
-            🗺️ Navigasi
+          <a href="https://www.google.com/maps/dir/?api=1&destination=${node.latitude},${node.longitude}" target="_blank" style="text-decoration:none; background:#0f766e; color:white; border-radius:4px; padding:6px 10px; font-size:11px; font-weight:600; display:flex; align-items:center;">
+            Navigasi Maps
           </a>
         </div>
       `;

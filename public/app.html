@@ -16,14 +16,14 @@
     <!-- Top Navigation Bar -->
     <header class="navbar">
         <div class="brand">
-            <span style="font-size: 20px;">🌐</span>
+            <span style="font-size: 20px;"></span>
             <span>NMS-GIS ISP</span>
             <span class="brand-badge">Fiber Optic</span>
         </div>
         <div class="nav-actions">
             <span id="userBadge" class="brand-badge" style="background:#334155; display:none;"></span>
             <button id="addNodeBtn" class="btn btn-primary btn-sm" style="display:none;">
-                ➕ Tambah Titik GIS
+                 Tambah Titik GIS
             </button>
             <button id="loginBtn" class="btn btn-secondary btn-sm">
                 Masuk
@@ -40,7 +40,7 @@
         <aside id="dashboardPanel" class="floating-panel">
             <div class="panel-header">
                 <span>Monitoring Jaringan & Layer</span>
-                <button id="toggleSidebarBtn" class="btn btn-secondary btn-sm" style="padding: 2px 6px;">✕</button>
+                <button id="toggleSidebarBtn" class="btn btn-secondary btn-sm" style="padding: 2px 6px;">X</button>
             </div>
             <div class="panel-body">
                 <!-- Summary KPI Cards -->
@@ -70,27 +70,27 @@
                 <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                         <input type="checkbox" class="filter-checkbox" data-filter="POP" checked>
-                        <span>🏢 POP / Core Server</span>
+                        <span> POP / Core Server</span>
                     </label>
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                         <input type="checkbox" class="filter-checkbox" data-filter="ODC" checked>
-                        <span>🗄️ ODC (Optical Distribution Cabinet)</span>
+                        <span>️ ODC (Optical Distribution Cabinet)</span>
                     </label>
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                         <input type="checkbox" class="filter-checkbox" data-filter="JB" checked>
-                        <span>🔷 JB (Joint Box Closure)</span>
+                        <span> JB (Joint Box Closure)</span>
                     </label>
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                         <input type="checkbox" class="filter-checkbox" data-filter="ODP" checked>
-                        <span>📦 ODP (Distribution Point)</span>
+                        <span> ODP (Distribution Point)</span>
                     </label>
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                         <input type="checkbox" class="filter-checkbox" data-filter="CUSTOMER_NORMAL" checked>
-                        <span>🟢 Pelanggan Normal</span>
+                        <span> Pelanggan Normal</span>
                     </label>
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                         <input type="checkbox" class="filter-checkbox" data-filter="CUSTOMER_FAULT" checked>
-                        <span>🔴 Pelanggan Gangguan (LOS / dBm)</span>
+                        <span> Pelanggan Gangguan (LOS / dBm)</span>
                     </label>
                 </div>
             </div>
@@ -104,8 +104,8 @@
     <div id="loginModal" class="modal-overlay">
         <div class="modal-card">
             <div class="modal-header">
-                <span>🔐 Masuk Sistem NMS-GIS</span>
-                <button id="closeLoginModalBtn" class="btn btn-secondary btn-sm">✕</button>
+                <span> Masuk Sistem NMS-GIS</span>
+                <button id="closeLoginModalBtn" class="btn btn-secondary btn-sm">X</button>
             </div>
             <form id="loginForm">
                 <div class="modal-body">
@@ -134,15 +134,15 @@
     <div id="addNodeModal" class="modal-overlay">
         <div class="modal-card">
             <div class="modal-header">
-                <span>📍 Tambah Titik Infrastruktur GIS</span>
-                <button id="closeAddNodeModalBtn" class="btn btn-secondary btn-sm">✕</button>
+                <span> Tambah Titik Infrastruktur GIS</span>
+                <button id="closeAddNodeModalBtn" class="btn btn-secondary btn-sm">X</button>
             </div>
             <form id="addNodeForm">
                 <div class="modal-body">
                     <!-- Metode 2: Tombol GPS Cepat -->
                     <div style="background: rgba(37, 99, 235, 0.15); border: 1px dashed var(--primary); padding: 10px; border-radius: 8px;">
                         <button type="button" id="btnUseGps" class="btn btn-primary btn-sm" style="width: 100%;">
-                            🎯 Gunakan Lokasi GPS Saya Saat Ini
+                             Gunakan Lokasi GPS Saya Saat Ini
                         </button>
                         <div style="font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 4px;">
                             Atau geser Pin Merah langsung di peta (Metode 1)
