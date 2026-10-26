@@ -42,7 +42,7 @@ export default function GisMap({
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors | NMS-GIS ISP'
+      attribution: '&copy; OpenStreetMap contributors | NMS-GIS Enterprise'
     }).addTo(map);
 
     mapInstance.current = map;
@@ -107,22 +107,28 @@ export default function GisMap({
     });
   };
 
-  // 3. Render Nodes & Cables
+  // 3. Render Nodes & Cables (Interactive & Dynamic Auto-Connect)
   useEffect(() => {
     const map = mapInstance.current;
     if (!map) return;
 
     // Clear old cables
-    cablesRef.current.forEach((c) => map.removeLayer(c));
+    cablesRef.current.forEach((item) => {
+      if (item && item.polyline) {
+        map.removeLayer(item.polyline);
+      }
+    });
     cablesRef.current.clear();
 
-    // Render Cables
+    const existingPairs = new Set();
+
+    // Render Explicit Cables from database
     cables.forEach((cable) => {
       if (!cable.waypoints || cable.waypoints.length < 2) return;
 
       const polyline = L.polyline(cable.waypoints, {
         color: cable.status_color || '#10B981',
-        weight: cable.cable_type === 'feeder' ? 6 : cable.cable_type === 'distribution' ? 4 : 2,
+        weight: cable.cable_type === 'feeder' ? 6 : cable.cable_type === 'distribution' ? 4 : 2.5,
         opacity: 0.85,
         dashArray: cable.is_flashing ? '8, 8' : null
       }).addTo(map);
@@ -132,14 +138,62 @@ export default function GisMap({
         { sticky: true }
       );
 
-      cablesRef.current.set(cable.id, polyline);
+      cablesRef.current.set(cable.id, {
+        polyline,
+        start_node_id: cable.start_node_id,
+        end_node_id: cable.end_node_id
+      });
+
+      if (cable.start_node_id && cable.end_node_id) {
+        existingPairs.add(`${cable.start_node_id}-${cable.end_node_id}`);
+        existingPairs.add(`${cable.end_node_id}-${cable.start_node_id}`);
+      }
+    });
+
+    // Auto-Connect any node with parent_node_id that lacks a cable
+    const nodeMap = new Map();
+    nodes.forEach((n) => nodeMap.set(n.id, n));
+
+    nodes.forEach((n) => {
+      if (n.parent_node_id && nodeMap.has(n.parent_node_id)) {
+        const parent = nodeMap.get(n.parent_node_id);
+        const pairKey = `${parent.id}-${n.id}`;
+        if (!existingPairs.has(pairKey)) {
+          const autoKey = `auto-${n.id}`;
+          const isDrop = n.node_type === 'CUSTOMER';
+          const autoLine = L.polyline(
+            [
+              [parent.latitude, parent.longitude],
+              [n.latitude, n.longitude]
+            ],
+            {
+              color: '#10B981',
+              weight: isDrop ? 2.5 : 4,
+              opacity: 0.85,
+              dashArray: isDrop ? '6, 6' : null
+            }
+          ).addTo(map);
+
+          autoLine.bindTooltip(
+            `<strong>Jalur Kabel Terhubung Otomatis</strong><br>Dari: ${parent.node_code} &rarr; Ke: ${n.node_code}`,
+            { sticky: true }
+          );
+
+          cablesRef.current.set(autoKey, {
+            polyline: autoLine,
+            start_node_id: parent.id,
+            end_node_id: n.id
+          });
+          existingPairs.add(pairKey);
+        }
+      }
     });
 
     // Clear old markers
     markersRef.current.forEach((m) => map.removeLayer(m));
     markersRef.current.clear();
 
-    // Render Nodes
+    // Render Nodes with live interactive dragging of cables
     nodes.forEach((node) => {
       // Check layer filter
       let isVisible = true;
@@ -160,7 +214,29 @@ export default function GisMap({
         draggable: true
       }).addTo(map);
 
-      // Handle dragend to update coordinates
+      // LIVE INTERACTIVE CABLE UPDATES WHILE DRAGGING
+      marker.on('drag', (e) => {
+        const pos = e.target.getLatLng();
+        cablesRef.current.forEach((cableItem) => {
+          if (!cableItem || !cableItem.polyline) return;
+          const { polyline, start_node_id, end_node_id } = cableItem;
+          if (start_node_id === node.id || end_node_id === node.id) {
+            const currentPoints = polyline.getLatLngs();
+            if (currentPoints && currentPoints.length >= 2) {
+              const updatedPoints = [...currentPoints];
+              if (start_node_id === node.id) {
+                updatedPoints[0] = pos;
+              }
+              if (end_node_id === node.id) {
+                updatedPoints[updatedPoints.length - 1] = pos;
+              }
+              polyline.setLatLngs(updatedPoints);
+            }
+          }
+        });
+      });
+
+      // Handle dragend to persist coordinates
       marker.on('dragend', (e) => {
         const pos = e.target.getLatLng();
         if (onUpdateCoords) {
@@ -169,7 +245,7 @@ export default function GisMap({
       });
 
       // Status Badge HTML
-      const rxText = node.rx_power_dbm !== null ? `${node.rx_power_dbm} dBm` : 'N/A';
+      const rxText = node.rx_power_dbm !== null ? `${node.rx_power_dbm} dBm` : '-';
       const popupContent = document.createElement('div');
       popupContent.style.minWidth = '200px';
       popupContent.innerHTML = `
@@ -206,7 +282,7 @@ export default function GisMap({
       if (!pickerMarkerRef.current) {
         const pickerIcon = L.divIcon({
           className: 'leaflet-custom-icon',
-          html: `<div class="marker-pin" style="background:#f43f5e; transform:scale(1.2);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg></div>`,
+          html: `<div class="marker-pin" style="background:#2563eb; transform:scale(1.2);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg></div>`,
           iconSize: [36, 36],
           iconAnchor: [18, 18]
         });
