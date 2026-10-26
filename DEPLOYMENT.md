@@ -1,169 +1,104 @@
-# 🚀 Panduan Otomatisasi CI/CD & Deployment Hosting (NMS-GIS ISP)
+# 🚀 Panduan Deployment Hosting Hostinger (Git Deployment)
 
-Dokumen ini menjelaskan konfigurasi alur kerja **CI/CD (Continuous Integration & Continuous Deployment)** menggunakan **GitHub Actions** untuk men-deploy aplikasi secara otomatis ke server hosting Anda setiap kali ada *push* ke branch `dev` atau `main`.
+Dokumen ini menjelaskan alur kerja deployment aplikasi **NMS-GIS ISP** langsung menggunakan fitur bawaan **Hostinger Git Deployment (Clone langsung dari GitHub)**. Karena repositori GitHub bersifat publik, proses deployment berjalan instan, otomatis, dan tanpa memerlukan konfigurasi GitHub Actions maupun SSH secrets.
 
-Panduan terlengkap dengan diagram arsitektur dan troubleshooting tersedia di [**`doc/deployment-guide.md`**](file:///c:/Users/user/Documents/aldo/cbs/doc/deployment-guide.md).
-
----
-
-## 1. Konfigurasi GitHub Repository Secrets
-
-Agar GitHub Actions dapat mengakses dan mengirimkan file ke server hosting Anda secara aman, tambahkan *Secrets* pada repositori GitHub Anda:
-
-Buka GitHub: **Repository $\rightarrow$ Settings $\rightarrow$ Secrets and variables $\rightarrow$ Actions $\rightarrow$ New repository secret**
-
-### Pilihan A: Server VPS / Dedicated Server (Sangat Disarankan via SSH)
-
-| Nama Secret | Keterangan / Contoh Nilai |
-| --- | --- |
-| `SSH_HOST` | Alamat IP atau hostname server (contoh: `103.150.xxx.xxx` atau `nms.domainklien.com`) |
-| `SSH_USER` | Username SSH (contoh: `root` atau `deployer`) |
-| `SSH_PRIVATE_KEY` | Isi private key SSH (OpenSSH private key `id_rsa` / `id_ed25519`) |
-| `SSH_PORT` | Port SSH server (default: `22`) |
-| `DEPLOY_TARGET_DIR` | Direktori tujuan di server (contoh: `/var/www/nms-gis`) |
-
-> **Cara membuat SSH Key untuk deployer di VPS:**
-> ```bash
-> ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/github_deploy -N ""
-> cat ~/.ssh/github_deploy.pub >> ~/.ssh/authorized_keys
-> chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys
-> cat ~/.ssh/github_deploy # Salin isi private key ke GitHub Secret SSH_PRIVATE_KEY
-> ```
+Panduan arsitektur dan konfigurasi lengkap tersedia di [**`doc/deployment-guide.md`**](file:///c:/Users/user/Documents/aldo/cbs/doc/deployment-guide.md).
 
 ---
 
-### Pilihan B: Shared Hosting / cPanel (via FTP / FTPS)
+## 1. Menghubungkan Repositori GitHub ke Hostinger hPanel
 
-Jika hosting Anda adalah shared hosting / cPanel tanpa akses SSH terminal:
-
-| Nama Secret | Keterangan / Contoh Nilai |
-| --- | --- |
-| `FTP_SERVER` | Hostname FTP (contoh: `ftp.domainklien.com` atau IP server) |
-| `FTP_USERNAME` | Akun user FTP cPanel |
-| `FTP_PASSWORD` | Kata sandi akun FTP cPanel |
-| `FTP_REMOTE_DIR` | Folder web root (contoh: `/public_html/nms/` atau `/public_html/`) |
-
----
-
-## 2. Konfigurasi Web Server di Hosting
-
-### A. Konfigurasi Nginx (Rekomendasi untuk Performa & Mitigasi PHP2Shell)
-
-Arahkan `root` web server ke folder `/public` (bukan root proyek):
-
-```nginx
-server {
-    listen 80;
-    server_name nms.domainklien.com;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name nms.domainklien.com;
-
-    # SSL Certificate (Wajib HTTPS untuk HTML5 GPS HP)
-    ssl_certificate /etc/letsencrypt/live/nms.domainklien.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/nms.domainklien.com/privkey.pem;
-
-    # Pointing DocumentRoot ke folder /public
-    root /var/www/nms-gis/public;
-    index index.php index.html;
-
-    # Security Headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header Permissions-Policy "geolocation=(self)" always;
-
-    # Mitigasi Celah PHP-CGI Argument Injection (CVE-2024-4577 / PHP2Shell)
-    if ($query_string ~* "(-d|-s|-u|-w|%ad)") {
-        return 403;
-    }
-
-    # Route seluruh request ke Front Controller / SPA
-    location / {
-        try_files $uri $uri/ /index.php?$query_string;
-    }
-
-    # PHP-FPM Handler
-    location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/run/php/php8.3-fpm.sock; # Sesuaikan versi PHP
-        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-        include fastcgi_params;
-        fastcgi_hide_header X-Powered-By;
-        fastcgi_param HTTP_PROXY ""; # Mitigasi HTTPoxy
-    }
-}
-```
+1. Masuk ke **Hostinger hPanel** $\rightarrow$ buka menu **Websites** $\rightarrow$ pilih domain/subdomain `cbs.bawananusantara.com`.
+2. Di sidebar menu kiri, buka seksi **Advanced** $\rightarrow$ klik **Git**.
+3. Di bagian **Create a Repository (Buat Repositori)**:
+   * **Repository**: `https://github.com/omkjago/cbs.git`
+   * **Branch**: `main` (atau `dev` untuk staging/development)
+   * **Install Path**: Biarkan default atau sesuaikan dengan folder subdomain Anda (misal: `public_html/cbs`).
+4. Klik tombol **Create / Buat**.
+5. Hostinger akan melakukan `git clone` secara otomatis. Semua berkas aplikasi, frontend React (`public/dist/`), dan backend PHP akan langsung terpasang.
 
 ---
 
-### B. Konfigurasi Apache (`.htaccess` di folder `/public`)
+## 2. Otomatisasi Auto-Deploy via GitHub Webhook
 
-Jika menggunakan web server Apache (misal di cPanel), set Document Root subdomain mengarah ke `public_html/nms/public`. File `.htaccess` protektif telah otomatis aktif di folder `public/`.
+Agar setiap ada pembaruan komit di GitHub langsung terdeploy secara otomatis ke Hostinger tanpa perlu klik tombol deploy manual:
+
+1. Di menu **Git** Hostinger hPanel, cari repositori yang baru saja dibuat.
+2. Di kolom **Auto-Deployment**, salin URL **Webhook** yang disediakan oleh Hostinger (contoh: `https://hpanel.hostinger.com/api/git/deploy/...`).
+3. Buka repositori Anda di GitHub:
+   * Buka **Settings** $\rightarrow$ **Webhooks** $\rightarrow$ klik **Add webhook**.
+   * **Payload URL**: Tempelkan URL Webhook dari Hostinger tadi.
+   * **Content type**: `application/json`.
+   * **Which events would you like to trigger this webhook?**: Pilih `Just the push event`.
+   * Klik **Add webhook**.
+4. Selesai! Sekarang setiap kali Anda menjalankan `git push origin main` (atau `dev`), Hostinger akan langsung menarik (*pull*) perubahan terbaru secara otomatis.
 
 ---
 
 ## 3. Konfigurasi File Environment Server (`.env`)
 
-Di server hosting Anda, siapkan file `.env` di root direktori proyek (`/var/www/nms-gis/.env`):
+Di server Hostinger, siapkan file `.env` di dalam root direktori instalasi aplikasi (misal via **File Manager** hPanel):
+
+1. Masuk ke **hPanel** $\rightarrow$ **File Manager** $\rightarrow$ buka folder instalasi aplikasi (misal `public_html/cbs/`).
+2. Buat file baru bernama `.env` (atau salin dari `.env.example`).
+3. Isi konfigurasi produksi:
 
 ```env
+# ==============================================================================
+# NMS-GIS ISP - Production Environment Configuration
+# ==============================================================================
+
 APP_NAME="NMS-GIS Fiber Optic Monitoring"
 APP_ENV=production
 APP_DEBUG=false
-APP_URL=https://nms.domainklien.com
+APP_URL=https://cbs.bawananusantara.com
 
-# Database MySQL Produksi
+# Database MySQL Produksi (Hostinger MySQL Database)
 DB_DRIVER=mysql
 DB_HOST=127.0.0.1
 DB_PORT=3306
-DB_DATABASE=nms_gis_db
-DB_USERNAME=nms_user
-DB_PASSWORD=PasswordDbKuat123!
+DB_DATABASE=u123456789_nms
+DB_USERNAME=u123456789_nmsuser
+DB_PASSWORD=PasswordDatabaseSangatKuat_2026!
 DB_CHARSET=utf8mb4
 
 # Master Key Enkripsi AES-256-GCM (Wajib 64 Karakter Hex)
-# Buat dengan: openssl rand -hex 32
 APP_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 
-# JWT Secret Token Key
-# Buat dengan: openssl rand -base64 48
-JWT_SECRET=super_secret_jwt_key_produksi_isp_2026
+# Stateless JWT Authentication Secret Token
+JWT_SECRET=c2VjdXJlX2p3dF9zZWNyZXRfdG9rZW5faXNwXzIwMjZfbXNnaXNfcHJvZHVjdGlvbg==
 JWT_EXPIRATION=3600
 JWT_REFRESH_EXPIRATION=604800
 
 # CORS
-CORS_ALLOWED_ORIGINS=https://nms.domainklien.com
+CORS_ALLOWED_ORIGINS=https://cbs.bawananusantara.com
+
+# Ambang Batas Optical Power Meter (OPM dBm)
+RX_POWER_WARNING_THRESHOLD=-25.00
+RX_POWER_CRITICAL_THRESHOLD=-28.00
 ```
 
 ---
 
-## 4. Penjadwalan Background Worker (Cron Jobs)
+## 4. Eksekusi Migrasi Database Awal
 
-Jalankan 2 cron job berikut di server hosting:
-
-```cron
-# 1. Poller Engine (Polling OLT & MikroTik setiap 2 Menit)
-*/2 * * * * /usr/bin/php /var/www/nms-gis/workers/poller_worker.php >> /var/log/nms-poller.log 2>&1
-
-# 2. Cleanup Temp Logs (Pembersihan log otomatis harian pukul 03:00 WIB)
-0 3 * * * /usr/bin/php /var/www/nms-gis/workers/cleanup_temp_logs.php >> /var/log/nms-cleanup.log 2>&1
-```
+Setelah database MySQL dibuat dan kredensial di `.env` telah diisi:
+* Jalankan migrasi via SSH terminal (atau via fitur Web Terminal hPanel):
+  ```bash
+  cd domains/bawananusantara.com/public_html/cbs
+  php database/migrate.php
+  ```
+* Skrip akan otomatis membuat tabel, mengisi indeks koordinat GIS, hashing Argon2id user Super Admin default (`admin@nms.isp` / `Admin123!@#`), serta data seed topologi jaringan.
 
 ---
 
-## 5. Alur Kerja Otomatisasi (Workflow Pipeline)
+## 5. Penjadwalan Background Worker (Cron Jobs di Hostinger)
 
-1. Developer melakukan `git push origin dev` (atau cherry-pick ke `main`).
-2. **Job CI** otomatis berjalan di GitHub Actions:
-   * Melakukan *syntax check* seluruh file PHP (`php -l`).
-   * Menjalankan 70 asersi unit & integration tests (`test_phase1.php` s/d `test_phase4.php`).
-   * Mengompilasi frontend React SPA (`npm run build`).
-3. Jika seluruh pengujian lolos, **Job CD** otomatis aktif:
-   * Men-deploy file termutakhir ke server hosting via SSH/Rsync atau FTPS.
-   * Menjalankan migrasi database otomatis (`php database/migrate.php`).
-   * Menetapkan hak akses direktori (*chmod 755*).
+Di Hostinger hPanel, buka menu **Advanced** $\rightarrow$ **Cron Jobs**:
+
+1. **Poller Worker (Polling OLT & MikroTik setiap 2 Menit)**:
+   * **Common Settings**: `*/2 * * * *` (Every 2 minutes)
+   * **Command**: `/usr/bin/php /home/uXXXX/domains/bawananusantara.com/public_html/cbs/workers/poller_worker.php >/dev/null 2>&1`
+2. **Auto-Purge Worker (Pembersihan Log Harian Pukul 03:00 WIB)**:
+   * **Common Settings**: `0 3 * * *` (Once a day at 03:00)
+   * **Command**: `/usr/bin/php /home/uXXXX/domains/bawananusantara.com/public_html/cbs/workers/cleanup_temp_logs.php >/dev/null 2>&1`
