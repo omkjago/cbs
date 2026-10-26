@@ -5,50 +5,82 @@ export default function AddNodeModal({
   isOpen,
   onClose,
   parentNodes = [],
+  coords,
+  onCoordsChange,
+  inputMethod,
   onSubmit,
+  onUseGps,
   onToast
 }) {
-  // Form State
   const [nodeType, setNodeType] = useState('ODP');
   const [nodeCode, setNodeCode] = useState('');
   const [nodeName, setNodeName] = useState('');
   const [parentId, setParentId] = useState('');
-  const [portCapacity, setPortCapacity] = useState('16');
   const [addressNote, setAddressNote] = useState('');
+  const [portCapacity, setPortCapacity] = useState('16');
   const [onuSn, setOnuSn] = useState('');
-  const [pppoeUser, setPppoeUser] = useState('');
+  const [pppoeUsername, setPppoeUsername] = useState('');
+  const [onuInterface, setOnuInterface] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Location State
-  const [lat, setLat] = useState('-6.9910000');
-  const [lng, setLng] = useState('110.4230000');
-  const [inputMethod, setInputMethod] = useState('map_marker'); // 'map_marker' | 'gps' | 'search' | 'manual_latlong'
-  const [locationMode, setLocationMode] = useState('map'); // 'map' | 'gps' | 'search' | 'manual'
-
-  // Search State
+  // 4 Location Modes: 'map' (toggle pin), 'gps', 'search' (Nominatim live), 'manual'
+  const [locationMode, setLocationMode] = useState('map');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
-  // Leaflet Map & Marker Refs
-  const mapContainerRef = useRef(null);
-  const mapInstanceRef = useRef(null);
-  const markerRef = useRef(null);
+  // Local Coordinate State
+  const [lat, setLat] = useState(coords?.lat || '-6.9910000');
+  const [lng, setLng] = useState(coords?.lng || '110.4230000');
 
-  // Initialize or re-center preview map when modal opens
+  // Preview Map references
+  const mapContainerRef = useRef(null);
+  const previewMapRef = useRef(null);
+  const previewMarkerRef = useRef(null);
+
+  // Sync coords from parent props
+  useEffect(() => {
+    if (coords) {
+      setLat(parseFloat(coords.lat).toFixed(7));
+      setLng(parseFloat(coords.lng).toFixed(7));
+    }
+  }, [coords]);
+
+  // Set default port capacity on node type change
+  useEffect(() => {
+    switch (nodeType) {
+      case 'POP':
+        setPortCapacity('144');
+        break;
+      case 'ODC':
+        setPortCapacity('96');
+        break;
+      case 'JB':
+        setPortCapacity('48');
+        break;
+      case 'ODP':
+        setPortCapacity('16');
+        break;
+      case 'CUSTOMER':
+      default:
+        setPortCapacity('1');
+        break;
+    }
+  }, [nodeType]);
+
+  // Initialize Embedded Leaflet Preview Map
   useEffect(() => {
     if (!isOpen) {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-        markerRef.current = null;
+      if (previewMapRef.current) {
+        previewMapRef.current.remove();
+        previewMapRef.current = null;
+        previewMarkerRef.current = null;
       }
       return;
     }
 
-    // Small delay to ensure modal DOM is mounted and sized properly
     const timer = setTimeout(() => {
-      if (!mapContainerRef.current || mapInstanceRef.current) return;
+      if (!mapContainerRef.current || previewMapRef.current) return;
 
       const initialLat = parseFloat(lat) || -6.991;
       const initialLng = parseFloat(lng) || 110.423;
@@ -67,7 +99,7 @@ export default function AddNodeModal({
       // Create interactive pin icon
       const pinIcon = L.divIcon({
         className: 'preview-map-pin',
-        html: `<div style="background:#2563eb; width:28px; height:28px; border-radius:50% 50% 50% 0; transform:rotate(-45deg); border:2px solid #ffffff; box-shadow:0 2px 6px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;">
+        html: `<div style="background:#2563eb; width:28px; height:28px; border-radius:50% 50% 50% 0; transform:rotate(-45deg); border:2px solid #ffffff; box-shadow:0 2px 6px rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center;">
           <div style="background:#ffffff; width:10px; height:10px; border-radius:50%;"></div>
         </div>`,
         iconSize: [28, 28],
@@ -86,42 +118,43 @@ export default function AddNodeModal({
         const clickedLng = e.latlng.lng.toFixed(7);
         setLat(clickedLat);
         setLng(clickedLng);
-        setInputMethod('map_marker');
+        if (onCoordsChange) onCoordsChange(clickedLat, clickedLng, 'map_marker');
         marker.setLatLng(e.latlng);
       });
 
       // Marker Drag Event
       marker.on('dragend', (e) => {
         const pos = e.target.getLatLng();
-        setLat(pos.lat.toFixed(7));
-        setLng(pos.lng.toFixed(7));
-        setInputMethod('map_marker');
+        const draggedLat = pos.lat.toFixed(7);
+        const draggedLng = pos.lng.toFixed(7);
+        setLat(draggedLat);
+        setLng(draggedLng);
+        if (onCoordsChange) onCoordsChange(draggedLat, draggedLng, 'map_marker');
       });
 
-      mapInstanceRef.current = map;
-      markerRef.current = marker;
+      previewMapRef.current = map;
+      previewMarkerRef.current = marker;
 
-      // Invalidate size after modal render
-      setTimeout(() => {
-        map.invalidateSize();
-      }, 200);
-    }, 100);
+      // Invalidate size to guarantee smooth rendering inside modal
+      setTimeout(() => map.invalidateSize(), 200);
+    }, 150);
 
     return () => clearTimeout(timer);
   }, [isOpen]);
 
-  // Synchronize map & marker when lat/lng change from inputs or search
+  // Synchronize Leaflet map view when coordinates change
   const updateCoordsAndPan = (newLat, newLng, method) => {
-    setLat(newLat);
-    setLng(newLng);
-    setInputMethod(method);
+    const parsedLat = parseFloat(newLat);
+    const parsedLng = parseFloat(newLng);
+    if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+      setLat(parsedLat.toFixed(7));
+      setLng(parsedLng.toFixed(7));
+      if (onCoordsChange) onCoordsChange(parsedLat.toFixed(7), parsedLng.toFixed(7), method);
 
-    const numLat = parseFloat(newLat);
-    const numLng = parseFloat(newLng);
-
-    if (!isNaN(numLat) && !isNaN(numLng) && mapInstanceRef.current && markerRef.current) {
-      markerRef.current.setLatLng([numLat, numLng]);
-      mapInstanceRef.current.flyTo([numLat, numLng], 17);
+      if (previewMapRef.current && previewMarkerRef.current) {
+        previewMarkerRef.current.setLatLng([parsedLat, parsedLng]);
+        previewMapRef.current.panTo([parsedLat, parsedLng]);
+      }
     }
   };
 
@@ -148,17 +181,46 @@ export default function AddNodeModal({
     );
   };
 
-  // Location Search Handler (Nominatim OpenStreetMap Geocoding)
+  // Live Geocoding Search with Debounce (Automatic typing search)
+  useEffect(() => {
+    if (locationMode !== 'search') return;
+    const query = searchQuery.trim();
+    if (query.length < 3) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+
+    setSearchLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=6&countrycodes=id`;
+        const res = await fetch(url, { headers: { 'Accept-Language': 'id,en' } });
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setSearchResults(data);
+        }
+      } catch {
+        // silent error during rapid typing
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, locationMode]);
+
+  // Manual Trigger for Location Search
   const handleSearchLocation = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     if (!searchQuery.trim()) return;
 
     setSearchLoading(true);
     setSearchResults([]);
 
     try {
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery.trim())}&limit=5&countrycodes=id`;
-      const res = await fetch(url);
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery.trim())}&limit=6&countrycodes=id`;
+      const res = await fetch(url, { headers: { 'Accept-Language': 'id,en' } });
       const data = await res.json();
 
       if (!data || data.length === 0) {
@@ -197,11 +259,12 @@ export default function AddNodeModal({
         latitude: parseFloat(lat),
         longitude: parseFloat(lng),
         input_method: inputMethod,
-        parent_node_id: parentId ? parseInt(parentId) : null,
-        port_capacity: parseInt(portCapacity) || 0,
+        parent_node_id: parentId ? parseInt(parentId, 10) : null,
+        port_capacity: parseInt(portCapacity, 10) || 0,
         address_note: addressNote.trim(),
-        onu_sn: onuSn.trim() || null,
-        pppoe_username: pppoeUser.trim() || null
+        onu_sn: onuSn.trim(),
+        pppoe_username: pppoeUsername.trim(),
+        onu_interface: onuInterface.trim()
       });
       onClose();
     } finally {
@@ -227,7 +290,7 @@ export default function AddNodeModal({
             <div className="modal-map-pane">
               <div className="pane-section-header">
                 <span className="form-label" style={{ marginBottom: 0 }}>Penentuan Lokasi Titik</span>
-                <span className="coordinate-badge">
+                <span className="coordinate-badge font-mono">
                   Lat: {lat}, Lng: {lng}
                 </span>
               </div>
@@ -268,13 +331,13 @@ export default function AddNodeModal({
               <div
                 ref={mapContainerRef}
                 className="interactive-preview-map"
-                style={{ height: '260px', width: '100%', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                style={{ height: '260px', width: '100%', borderRadius: '6px', border: '1px solid #334155' }}
               />
 
               {/* Mode-Specific Sub-Panels */}
               {locationMode === 'map' && (
                 <div className="mode-helper-box">
-                  Klik langsung pada area peta preview di atas atau geser pin penanda biru untuk menentukan posisi koordinat yang presisi.
+                  Klik langsung pada area peta preview di atas atau geser pin penanda biru untuk menentukan posisi koordinat secara interaktif.
                 </div>
               )}
 
@@ -295,9 +358,10 @@ export default function AddNodeModal({
                     <input
                       type="text"
                       className="form-input"
-                      placeholder="Cari jalan, desa, kota, atau patokan..."
+                      placeholder="Ketik nama jalan, desa, kota (pencarian live)..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
+                      autoFocus
                     />
                     <button
                       type="button"
@@ -309,6 +373,12 @@ export default function AddNodeModal({
                     </button>
                   </div>
 
+                  {searchLoading && (
+                    <div style={{ fontSize: '11px', color: '#94a3b8', padding: '2px 4px' }}>
+                      Mencari lokasi live...
+                    </div>
+                  )}
+
                   {searchResults.length > 0 && (
                     <div className="search-results-dropdown">
                       {searchResults.map((item, idx) => (
@@ -318,7 +388,7 @@ export default function AddNodeModal({
                           onClick={() => handleSelectSearchResult(item)}
                         >
                           <div className="search-result-title">{item.display_name}</div>
-                          <div className="search-result-coords">
+                          <div className="search-result-coords font-mono">
                             Koordinat: {parseFloat(item.lat).toFixed(6)}, {parseFloat(item.lon).toFixed(6)}
                           </div>
                         </div>
@@ -335,7 +405,7 @@ export default function AddNodeModal({
                     <input
                       type="number"
                       step="0.0000001"
-                      className="form-input"
+                      className="form-input font-mono"
                       value={lat}
                       onChange={(e) => updateCoordsAndPan(e.target.value, lng, 'manual_latlong')}
                       required
@@ -346,7 +416,7 @@ export default function AddNodeModal({
                     <input
                       type="number"
                       step="0.0000001"
-                      className="form-input"
+                      className="form-input font-mono"
                       value={lng}
                       onChange={(e) => updateCoordsAndPan(lat, e.target.value, 'manual_latlong')}
                       required
@@ -368,51 +438,9 @@ export default function AddNodeModal({
                   >
                     <option value="ODP">ODP (Distribution Point)</option>
                     <option value="JB">JB (Joint Box Closure)</option>
-                    <option value="ODC">ODC (Optical Cabinet)</option>
-                    <option value="POP">POP (Core Server Room)</option>
-                    <option value="CUSTOMER">Pelanggan</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Kode Titik Unik</label>
-                  <input
-                    type="text"
-                    className="form-input code-font"
-                    placeholder="Contoh: ODP-SMG-003"
-                    value={nodeCode}
-                    onChange={(e) => setNodeCode(e.target.value.toUpperCase())}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Nama Titik / Nama Pelanggan</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="Contoh: ODP Simpang Lima Ruko C"
-                  value={nodeName}
-                  onChange={(e) => setNodeName(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
-                <div className="form-group">
-                  <label className="form-label">Node Induk (Parent Jaringan)</label>
-                  <select
-                    className="form-select"
-                    value={parentId}
-                    onChange={(e) => setParentId(e.target.value)}
-                  >
-                    <option value="">Tidak Ada (Titik Pusat POP / Root)</option>
-                    {parentNodes.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.node_code} - {p.node_name} ({p.node_type})
-                      </option>
-                    ))}
+                    <option value="ODC">ODC (Distribution Cabinet)</option>
+                    <option value="POP">POP (Core / Server)</option>
+                    <option value="CUSTOMER">Drop Core Pelanggan</option>
                   </select>
                 </div>
 
@@ -420,57 +448,105 @@ export default function AddNodeModal({
                   <label className="form-label">Kapasitas Port</label>
                   <input
                     type="number"
-                    className="form-input"
+                    className="form-input font-mono"
                     value={portCapacity}
                     onChange={(e) => setPortCapacity(e.target.value)}
+                    placeholder="16"
                   />
                 </div>
               </div>
 
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="form-group">
+                  <label className="form-label">Kode Node (Unik)</label>
+                  <input
+                    type="text"
+                    className="form-input font-mono"
+                    value={nodeCode}
+                    onChange={(e) => setNodeCode(e.target.value)}
+                    placeholder="Contoh: ODP-SMG-001"
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Nama Titik</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={nodeName}
+                    onChange={(e) => setNodeName(e.target.value)}
+                    placeholder="Contoh: ODP Jl. Pemuda No 12"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Node Induk (Parent Node / Sumber Jalur)</label>
+                <select
+                  className="form-select"
+                  value={parentId}
+                  onChange={(e) => setParentId(e.target.value)}
+                >
+                  <option value="">-- Tanpa Induk (Titik Core / Mandiri) --</option>
+                  {parentNodes.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      [{p.node_type}] {p.node_code} - {p.node_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {nodeType === 'CUSTOMER' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div className="form-group">
-                    <label className="form-label">Serial Number ONU (SN)</label>
-                    <input
-                      type="text"
-                      className="form-input code-font"
-                      placeholder="Contoh: ZTEGC1234567"
-                      value={onuSn}
-                      onChange={(e) => setOnuSn(e.target.value.toUpperCase())}
-                    />
+                <div style={{ background: '#0b1120', border: '1px solid #1e293b', padding: '10px', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8', marginBottom: '8px' }}>
+                    DATA PERANGKAT ONT MODEM
                   </div>
-                  <div className="form-group">
-                    <label className="form-label">Username PPPoE</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Contoh: user_ruko_3"
-                      value={pppoeUser}
-                      onChange={(e) => setPppoeUser(e.target.value)}
-                    />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">PPPoE Username</label>
+                      <input
+                        type="text"
+                        className="form-input font-mono"
+                        placeholder="user@isp.net"
+                        value={pppoeUsername}
+                        onChange={(e) => setPppoeUsername(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">Serial Number Modem (SN)</label>
+                      <input
+                        type="text"
+                        className="form-input font-mono"
+                        placeholder="ZTEG12345678"
+                        value={onuSn}
+                        onChange={(e) => setOnuSn(e.target.value)}
+                      />
+                    </div>
                   </div>
                 </div>
               )}
 
               <div className="form-group">
-                <label className="form-label">Catatan Alamat / Patokan Lokasi</label>
+                <label className="form-label">Catatan Alamat / Landmark</label>
                 <textarea
-                  className="form-input"
-                  rows="3"
-                  placeholder="Contoh: Tiang besi PLN depan ruko nomor 10, samping minimarket..."
+                  className="form-textarea"
+                  rows="2"
                   value={addressNote}
                   onChange={(e) => setAddressNote(e.target.value)}
+                  placeholder="Detail lokasi tiang, patokan jalan, atau nomor rumah..."
                 />
               </div>
             </div>
           </div>
 
           <div className="modal-footer">
-            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={loading}>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>
               Batal
             </button>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? 'Menyimpan...' : 'Simpan Titik GIS'}
+            <button type="submit" className="btn btn-primary btn-sm" disabled={loading}>
+              {loading ? 'Menyimpan...' : 'Simpan Titik Jaringan'}
             </button>
           </div>
         </form>

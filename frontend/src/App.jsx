@@ -13,6 +13,7 @@ import KpiCards from './components/KpiCards';
 import FaultAlertBanner from './components/FaultAlertBanner';
 import AddNodeModal from './components/AddNodeModal';
 import LoginModal from './components/LoginModal';
+import { IconInventory } from './components/Icons';
 import { Api } from './services/api';
 
 export default function App() {
@@ -131,19 +132,33 @@ export default function App() {
     );
   };
 
+  // Live Interactive Node Movement & Immediate Coordinate Sync
   const handleUpdateCoords = async (nodeId, lat, lng, nodeName) => {
-    const confirmUpdate = window.confirm(`Pindahkan koordinat ${nodeName} ke [${lat.toFixed(6)}, ${lng.toFixed(6)}]?`);
-    if (!confirmUpdate) {
-      loadMapData();
-      return;
-    }
+    // 1. Optimistically update local node position and connected cables in mapData
+    setMapData((prev) => {
+      const updatedNodes = (prev.nodes || []).map((n) =>
+        n.id === nodeId ? { ...n, latitude: lat, longitude: lng } : n
+      );
+      const updatedCables = (prev.cables || []).map((c) => {
+        if (c.start_node_id === nodeId || c.end_node_id === nodeId) {
+          const wps = [...(c.waypoints || [])];
+          if (wps.length >= 2) {
+            if (c.start_node_id === nodeId) wps[0] = [lat, lng];
+            if (c.end_node_id === nodeId) wps[wps.length - 1] = [lat, lng];
+          }
+          return { ...c, waypoints: wps };
+        }
+        return c;
+      });
+      return { ...prev, nodes: updatedNodes, cables: updatedCables };
+    });
 
+    // 2. Persist to backend without blocking modal dialog
     try {
       await Api.updateNode(nodeId, { latitude: lat, longitude: lng, input_method: 'map_marker' });
       showToast(`Koordinat ${nodeName} berhasil diperbarui.`, 'success');
-      loadMapData();
     } catch (err) {
-      showToast(err.message, 'error');
+      showToast(`Gagal menyimpan koordinat: ${err.message}`, 'error');
       loadMapData();
     }
   };
@@ -227,15 +242,29 @@ export default function App() {
             className="view-map-fullscreen"
             style={{ display: currentView === 'map' ? 'flex' : 'none' }}
           >
+            {/* Reopen Floating Button when panel is collapsed */}
+            {!isMapFilterOpen && (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm floating-reopen-panel-btn"
+                onClick={() => setIsMapFilterOpen(true)}
+                title="Buka Panel Filter Layer"
+              >
+                <IconInventory size={14} />
+                <span>Buka Panel Filter</span>
+              </button>
+            )}
+
             <aside className={`floating-map-panel ${!isMapFilterOpen ? 'collapsed' : ''}`}>
               <div className="panel-header">
                 <span>Filter Layer &amp; Topologi</span>
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
-                  onClick={() => setIsMapFilterOpen(!isMapFilterOpen)}
+                  onClick={() => setIsMapFilterOpen(false)}
+                  title="Sembunyikan Panel"
                 >
-                  {isMapFilterOpen ? 'Tutup Panel' : 'Buka Panel'}
+                  Tutup Panel
                 </button>
               </div>
 
@@ -333,6 +362,7 @@ export default function App() {
         inputMethod={inputMethod}
         onSubmit={handleCreateNode}
         onUseGps={handleUseGps}
+        onToast={showToast}
       />
 
       {/* TOAST NOTIFICATION */}

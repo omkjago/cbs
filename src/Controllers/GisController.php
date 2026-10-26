@@ -206,6 +206,46 @@ final class GisController
                 ];
             }
 
+            // Auto-connect any parent-child relationship missing an explicit cable
+            $existingConnections = [];
+            foreach ($cables as $cb) {
+                $existingConnections[$cb['start_node_id'] . '-' . $cb['end_node_id']] = true;
+                $existingConnections[$cb['end_node_id'] . '-' . $cb['start_node_id']] = true;
+            }
+
+            $nodeLookup = [];
+            foreach ($nodes as $n) {
+                $nodeLookup[$n['id']] = $n;
+            }
+
+            foreach ($nodes as $n) {
+                if ($n['parent_node_id'] !== null && isset($nodeLookup[$n['parent_node_id']])) {
+                    $p = $nodeLookup[$n['parent_node_id']];
+                    $connKey = $p['id'] . '-' . $n['id'];
+                    if (!isset($existingConnections[$connKey])) {
+                        $cables[] = [
+                            'id' => 900000 + (int)$n['id'],
+                            'cable_code' => 'AUTO-' . $p['node_code'] . '-' . $n['node_code'],
+                            'cable_type' => $n['node_type'] === 'CUSTOMER' ? 'drop_core' : ($n['node_type'] === 'ODP' ? 'distribution' : 'feeder'),
+                            'core_count' => $n['node_type'] === 'CUSTOMER' ? 1 : ($n['node_type'] === 'ODP' ? 12 : 24),
+                            'start_node_id' => $p['id'],
+                            'end_node_id' => $n['id'],
+                            'start_node_code' => $p['node_code'],
+                            'end_node_code' => $n['node_code'],
+                            'length_meters' => 0,
+                            'current_visual_status' => 'normal',
+                            'status_color' => '#10B981',
+                            'is_flashing' => false,
+                            'waypoints' => [
+                                [$p['latitude'], $p['longitude']],
+                                [$n['latitude'], $n['longitude']]
+                            ]
+                        ];
+                        $existingConnections[$connKey] = true;
+                    }
+                }
+            }
+
             if (!headers_sent()) {
                 http_response_code(200);
             }
@@ -295,10 +335,12 @@ final class GisController
             }
 
             // Verify parent exists if provided
+            $parent = null;
             if ($parentId !== null) {
-                $pStmt = $pdo->prepare("SELECT id FROM gis_nodes WHERE id = :id LIMIT 1");
+                $pStmt = $pdo->prepare("SELECT id, node_code, node_type, latitude, longitude FROM gis_nodes WHERE id = :id LIMIT 1");
                 $pStmt->execute([':id' => $parentId]);
-                if (!$pStmt->fetch()) {
+                $parent = $pStmt->fetch();
+                if (!$parent) {
                     http_response_code(422);
                     echo json_encode(['status' => 'error', 'message' => 'Parent node ID tidak valid.']);
                     return;
@@ -334,6 +376,62 @@ final class GisController
             ]);
 
             $newNodeId = (int)$pdo->lastInsertId();
+
+            // Auto-create cable connecting parent to new node
+            if ($parent !== null) {
+                $cableType = match ($nodeType) {
+                    'CUSTOMER' => 'drop_core',
+                    'ODP' => 'distribution',
+                    default => 'feeder'
+                };
+                $coreCount = match ($nodeType) {
+                    'CUSTOMER' => 1,
+                    'ODP' => 12,
+                    'JB' => 24,
+                    default => 48
+                };
+                $cableCode = 'CBL-' . $parent['node_code'] . '-' . $nodeCode;
+                $checkCbl = $pdo->prepare("SELECT id FROM gis_cables WHERE cable_code = :cbl LIMIT 1");
+                $checkCbl->execute([':cbl' => $cableCode]);
+                if ($checkCbl->fetch()) {
+                    $cableCode .= '-' . substr(bin2hex(random_bytes(2)), 0, 4);
+                }
+
+                $parentLat = (float)$parent['latitude'];
+                $parentLng = (float)$parent['longitude'];
+                $waypoints = [
+                    [$parentLat, $parentLng],
+                    [$lat, $lng]
+                ];
+
+                $earthRadius = 6371000;
+                $dLat = deg2rad($lat - $parentLat);
+                $dLng = deg2rad($lng - $parentLng);
+                $a = sin($dLat / 2) * sin($dLat / 2) +
+                     cos(deg2rad($parentLat)) * cos(deg2rad($lat)) *
+                     sin($dLng / 2) * sin($dLng / 2);
+                $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+                $distanceMeters = round($earthRadius * $c, 2);
+
+                $insertCable = $pdo->prepare("
+                    INSERT INTO gis_cables (
+                        cable_code, cable_type, core_count, start_node_id, end_node_id,
+                        waypoints_json, length_meters, current_visual_status
+                    ) VALUES (
+                        :code, :type, :core, :start_id, :end_id,
+                        :waypoints, :length, 'normal'
+                    )
+                ");
+                $insertCable->execute([
+                    ':code' => $cableCode,
+                    ':type' => $cableType,
+                    ':core' => $coreCount,
+                    ':start_id' => $parentId,
+                    ':end_id' => $newNodeId,
+                    ':waypoints' => json_encode($waypoints),
+                    ':length' => $distanceMeters
+                ]);
+            }
 
             // If Customer, initialize device_current_status
             if ($nodeType === 'CUSTOMER') {
@@ -459,6 +557,42 @@ final class GisController
             $sql = "UPDATE gis_nodes SET " . implode(', ', $fields) . " WHERE id = :id";
             $updateStmt = $pdo->prepare($sql);
             $updateStmt->execute($params);
+
+            // Update waypoints of all connected cables in real time
+            if (isset($input['latitude']) || isset($input['longitude'])) {
+                $posStmt = $pdo->prepare("SELECT latitude, longitude FROM gis_nodes WHERE id = :id LIMIT 1");
+                $posStmt->execute([':id' => $id]);
+                $pos = $posStmt->fetch();
+                if ($pos) {
+                    $curLat = (float)$pos['latitude'];
+                    $curLng = (float)$pos['longitude'];
+
+                    $cablesStmt = $pdo->prepare("
+                        SELECT id, start_node_id, end_node_id, waypoints_json 
+                        FROM gis_cables 
+                        WHERE start_node_id = :id OR end_node_id = :id
+                    ");
+                    $cablesStmt->execute([':id' => $id]);
+                    $connectedCables = $cablesStmt->fetchAll();
+
+                    foreach ($connectedCables as $cRow) {
+                        $wps = is_string($cRow['waypoints_json']) ? json_decode($cRow['waypoints_json'], true) : $cRow['waypoints_json'];
+                        if (is_array($wps) && count($wps) >= 2) {
+                            if ((int)$cRow['start_node_id'] === $id) {
+                                $wps[0] = [$curLat, $curLng];
+                            }
+                            if ((int)$cRow['end_node_id'] === $id) {
+                                $wps[count($wps) - 1] = [$curLat, $curLng];
+                            }
+                            $updCbl = $pdo->prepare("UPDATE gis_cables SET waypoints_json = :wps WHERE id = :cid");
+                            $updCbl->execute([
+                                ':wps' => json_encode($wps),
+                                ':cid' => $cRow['id']
+                            ]);
+                        }
+                    }
+                }
+            }
 
             if (!headers_sent()) {
                 http_response_code(200);
