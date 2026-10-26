@@ -1,4 +1,4 @@
-# 🚀 Panduan Deployment Hosting Hostinger (Git Deployment)
+# Panduan Deployment Hosting Hostinger (Git Deployment)
 
 Dokumen ini menjelaskan alur kerja deployment aplikasi **NMS-GIS ISP** langsung menggunakan fitur bawaan **Hostinger Git Deployment (Clone langsung dari GitHub)**. Karena repositori GitHub bersifat publik, proses deployment berjalan instan, otomatis, dan tanpa memerlukan konfigurasi GitHub Actions maupun SSH secrets.
 
@@ -86,9 +86,9 @@ Setelah database MySQL dibuat dan kredensial di `.env` telah diisi:
 * Jalankan migrasi via SSH terminal (atau via fitur Web Terminal hPanel):
   ```bash
   cd domains/bawananusantara.com/public_html/cbs
-  php database/migrate.php
+  php database/migrate.php --clean-dummy
   ```
-* Skrip akan otomatis membuat tabel, mengisi indeks koordinat GIS, hashing Argon2id user Super Admin default (`admin@nms.isp` / `Admin123!@#`), serta data seed topologi jaringan.
+* Skrip akan otomatis membuat tabel, mengisi indeks koordinat GIS, hashing Argon2id user Super Admin default (`admin@nms.isp` / `Admin123!@#`), dan menjamin basis data bersih tanpa data dummy.
 
 ---
 
