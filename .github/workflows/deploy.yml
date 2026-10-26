@@ -65,6 +65,8 @@ jobs:
             src/
             database/
             workers/
+            index.php
+            .htaccess
             .env.example
 
   # --------------------------------------------------------------------------

@@ -17,11 +17,17 @@ require_once __DIR__ . '/../src/Controllers/MonitoringController.php';
 // Handle CORS Headers & Options Preflight
 CorsMiddleware::handle();
 
-$uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+$rawUri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
-// If root is accessed, serve React SPA or fallback app.html
-if ($uri === '/' || $uri === '/index.php' || $uri === '/app') {
+// Normalize URI: strip /public or /index.php prefix if running on shared hosting root
+$uri = preg_replace('#^/public(?:/index\.php)?#', '', (string)$rawUri);
+if ($uri === '' || $uri === false) {
+    $uri = '/';
+}
+
+// If non-API route is accessed, serve React SPA dist/index.html or fallback app.html
+if (!str_starts_with($uri, '/api/')) {
     if (file_exists(__DIR__ . '/dist/index.html')) {
         include __DIR__ . '/dist/index.html';
         exit;
