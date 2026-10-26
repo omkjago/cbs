@@ -1404,7 +1404,7 @@ body {
 .layer-filter-container {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .filter-section-title {
@@ -1418,22 +1418,125 @@ body {
 .filter-checkbox-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
-.layer-checkbox-label {
+.layer-item-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 10px;
+  padding: 6px 10px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
   cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
 }
 
-.layer-indicator-circle {
-  width: 10px;
-  height: 10px;
+.layer-item-row:hover {
+  border-color: var(--border-medium);
+  background-color: rgba(30, 41, 59, 0.5);
+}
+
+.layer-item-inactive {
+  opacity: 0.45;
+}
+
+.layer-checkbox-input {
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+
+.filter-mini-pin {
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
-  display: inline-block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  border: 1.5px solid #ffffff;
+  flex-shrink: 0;
+}
+
+.layer-info-col {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.layer-tag-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.layer-tag-pill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  color: var(--cyan);
+  background-color: rgba(15, 23, 42, 0.9);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.layer-main-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cable-legend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.cable-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.cable-legend-line {
+  width: 32px;
+  height: 0;
+  flex-shrink: 0;
+}
+
+.cable-line-feeder {
+  border-top: 5px solid #10b981;
+}
+
+.cable-line-distribution {
+  border-top: 3.5px solid #10b981;
+}
+
+.cable-line-drop {
+  border-top: 2.5px dashed #10b981;
+}
+
+.cable-line-cut {
+  border-top: 3px dashed #ef4444;
+}
+
+.cable-legend-text {
+  font-size: 11px;
+  color: #cbd5e1;
 }
 
 .map-container {
