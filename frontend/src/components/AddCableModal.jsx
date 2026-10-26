@@ -13,9 +13,7 @@ export default function AddCableModal({
   const [cableCode, setCableCode] = useState('');
   const [cableType, setCableType] = useState('distribution');
   const [coreCount, setCoreCount] = useState('12');
-  const [routingMode, setRoutingMode] = useState('osrm'); // 'osrm' or 'straight'
   const [loading, setLoading] = useState(false);
-  const [calculating, setCalculating] = useState(false);
   const [estimatedLength, setEstimatedLength] = useState(null);
 
   // Auto-generate Cable Code when start/end changes
@@ -35,7 +33,7 @@ export default function AddCableModal({
     else if (cableType === 'drop_core') setCoreCount('1');
   }, [cableType]);
 
-  // Calculate distance estimate
+  // Calculate direct Haversine distance estimate
   useEffect(() => {
     if (!startNodeId || !endNodeId) {
       setEstimatedLength(null);
@@ -50,37 +48,18 @@ export default function AddCableModal({
     const lat2 = parseFloat(endNode.latitude);
     const lng2 = parseFloat(endNode.longitude);
 
-    if (routingMode === 'straight') {
-      // Direct Haversine
-      const R = 6371000;
-      const dLat = ((lat2 - lat1) * Math.PI) / 180;
-      const dLng = ((lng2 - lng1) * Math.PI) / 180;
-      const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos((lat1 * Math.PI) / 180) *
-          Math.cos((lat2 * Math.PI) / 180) *
-          Math.sin(dLng / 2) *
-          Math.sin(dLng / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      setEstimatedLength(Math.round(R * c));
-    } else {
-      // OSRM road routing
-      setCalculating(true);
-      const url = `https://router.project-osrm.org/route/v1/driving/${lng1},${lat1};${lng2},${lat2}?overview=false`;
-      fetch(url)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.routes && data.routes[0]) {
-            setEstimatedLength(Math.round(data.routes[0].distance));
-          } else {
-            // Fallback straight line
-            setEstimatedLength(null);
-          }
-        })
-        .catch(() => setEstimatedLength(null))
-        .finally(() => setCalculating(false));
-    }
-  }, [startNodeId, endNodeId, routingMode, nodes]);
+    const R = 6371000;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    setEstimatedLength(Math.round(R * c));
+  }, [startNodeId, endNodeId, nodes]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -105,27 +84,10 @@ export default function AddCableModal({
       const lat2 = parseFloat(endNode.latitude);
       const lng2 = parseFloat(endNode.longitude);
 
-      let waypoints = [
+      const waypoints = [
         [lat1, lng1],
         [lat2, lng2]
       ];
-      let distanceMeters = estimatedLength || 0;
-
-      // If OSRM mode is selected, fetch actual geometry
-      if (routingMode === 'osrm') {
-        try {
-          const url = `https://router.project-osrm.org/route/v1/driving/${lng1},${lat1};${lng2},${lat2}?overview=full&geometries=geojson`;
-          const res = await fetch(url);
-          const data = await res.json();
-          if (data.code === 'Ok' && data.routes && data.routes[0]) {
-            waypoints = data.routes[0].geometry.coordinates.map(([wLng, wLat]) => [wLat, wLng]);
-            distanceMeters = Math.round(data.routes[0].distance);
-          }
-        } catch {
-          // Fallback to straight line if OSRM is unreachable
-          if (onToast) onToast('Routing OSRM tidak merespons, menggunakan jalur langsung.', 'info');
-        }
-      }
 
       await onSubmit({
         cable_code: cableCode.trim(),
@@ -134,7 +96,7 @@ export default function AddCableModal({
         start_node_id: parseInt(startNodeId, 10),
         end_node_id: parseInt(endNodeId, 10),
         waypoints,
-        length_meters: distanceMeters
+        length_meters: estimatedLength || 0
       });
 
       onClose();
@@ -163,7 +125,7 @@ export default function AddCableModal({
         <form onSubmit={handleSubmit} className="modal-form">
           <div className="form-grid-2">
             <div className="form-group">
-              <label className="form-label">Titik Awal (Start Node)</label>
+              <label className="form-label">Titik Awal (Infrastruktur Asal)</label>
               <select
                 className="form-select"
                 value={startNodeId}
@@ -180,7 +142,7 @@ export default function AddCableModal({
             </div>
 
             <div className="form-group">
-              <label className="form-label">Titik Akhir (End Node)</label>
+              <label className="form-label">Titik Akhir (Infrastruktur Tujuan)</label>
               <select
                 className="form-select"
                 value={endNodeId}
@@ -239,49 +201,19 @@ export default function AddCableModal({
             </div>
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Metode Routing Kontur Jalur</label>
-            <div className="routing-mode-selector">
-              <label className={`routing-mode-card ${routingMode === 'osrm' ? 'active' : ''}`}>
-                <input
-                  type="radio"
-                  name="routingMode"
-                  value="osrm"
-                  checked={routingMode === 'osrm'}
-                  onChange={() => setRoutingMode('osrm')}
-                />
-                <div className="routing-card-content">
-                  <strong>Otomatis Mengikuti Ruas Jalan (OSRM)</strong>
-                  <span>Jalur kabel meliuk dan berkelok mengikuti kontur jalan OpenStreetMap secara akurat.</span>
-                </div>
-              </label>
-
-              <label className={`routing-mode-card ${routingMode === 'straight' ? 'active' : ''}`}>
-                <input
-                  type="radio"
-                  name="routingMode"
-                  value="straight"
-                  checked={routingMode === 'straight'}
-                  onChange={() => setRoutingMode('straight')}
-                />
-                <div className="routing-card-content">
-                  <strong>Garis Lurus Antar Titik</strong>
-                  <span>Jalur lurus awal. Anda dapat menambah titik lekukan dan belokan kapan saja di peta.</span>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          {/* Distance Estimate Display */}
           <div className="routing-estimate-box">
-            <span>Perkiraan Panjang Jalur Fisik:</span>
-            <strong>
-              {calculating
-                ? 'Menghitung rute jalan...'
-                : estimatedLength !== null
-                ? `${estimatedLength} Meter`
-                : '-'}
-            </strong>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
+                Koneksi Fisik Terhubung:
+              </span>
+              <span style={{ fontSize: '12px', color: 'var(--text-main)', fontWeight: 600 }}>
+                Kabel terhubung langsung antar kedua titik. Titik belokan dapat ditambahkan kapan saja di peta.
+              </span>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-dim)', display: 'block' }}>PANJANG LANGSUNG</span>
+              <strong>{estimatedLength !== null ? `${estimatedLength} Meter` : '-'}</strong>
+            </div>
           </div>
 
           <div className="modal-actions">

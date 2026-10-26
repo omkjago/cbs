@@ -1916,7 +1916,20 @@ body {
 }
 
 .vertex-handle-dot.bend {
+  width: 18px;
+  height: 18px;
   background-color: #f59e0b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vertex-handle-num {
+  font-size: 10px;
+  font-weight: 800;
+  color: #1e293b;
+  line-height: 1;
+  user-select: none;
 }
 
 .vertex-handle-dot.endpoint {
