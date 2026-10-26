@@ -186,5 +186,18 @@ export const Api = {
       method: 'POST',
       body: JSON.stringify(cableData)
     });
+  },
+
+  async updateCable(id, cableData) {
+    return this.request(`/gis/cables/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(cableData)
+    });
+  },
+
+  async deleteCable(id) {
+    return this.request(`/gis/cables/${id}`, {
+      method: 'DELETE'
+    });
   }
 };

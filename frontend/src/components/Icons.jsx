@@ -123,3 +123,11 @@ export const IconMenu = ({ size = 18, color = 'currentColor' }) => (
     <line x1="3" y1="18" x2="21" y2="18" />
   </svg>
 );
+
+export const IconCable = ({ size = 16, color = 'currentColor' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 19C4 19 8 19 9 15C10 11 14 11 15 7C16 3 20 3 20 3" />
+    <circle cx="4" cy="19" r="2" fill={color} />
+    <circle cx="20" cy="3" r="2" fill={color} />
+  </svg>
+);

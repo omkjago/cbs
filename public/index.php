@@ -78,6 +78,10 @@ try {
         GisController::createCable();
         exit;
     }
+    if ($method === 'PUT' && preg_match('#^/api/v1/gis/cables/(\d+)$#', $uri, $matches)) {
+        GisController::updateCable((int)$matches[1]);
+        exit;
+    }
     if ($method === 'DELETE' && preg_match('#^/api/v1/gis/cables/(\d+)$#', $uri, $matches)) {
         GisController::deleteCable((int)$matches[1]);
         exit;

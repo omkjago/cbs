@@ -1823,3 +1823,269 @@ body {
 .toast-message {
   font-weight: 500;
 }
+
+
+/* ==============================================================================
+   CABLE ROUTE EDITOR & BENDING CONTROLS (Zero Emojis/Symbols)
+   ============================================================================== */
+.map-viewport-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Floating Cable Route Editor Toolbar */
+.cable-editor-bar {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1500;
+  background-color: rgba(12, 18, 32, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--warning-border);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7);
+  border-radius: 8px;
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: calc(100% - 48px);
+  max-width: 900px;
+}
+
+.cable-editor-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cable-editor-mode-badge {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--warning);
+  letter-spacing: 0.5px;
+}
+
+.cable-editor-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-main);
+}
+
+.cable-editor-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.cable-editor-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.cable-editor-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Draggable Vertex Handle Dots on Cable */
+.vertex-handle-icon {
+  background: transparent;
+  border: none;
+}
+
+.vertex-handle-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+  cursor: move;
+  transition: transform 0.15s ease;
+}
+
+.vertex-handle-dot:hover {
+  transform: scale(1.35);
+}
+
+.vertex-handle-dot.bend {
+  background-color: #f59e0b;
+}
+
+.vertex-handle-dot.endpoint {
+  background-color: #3b82f6;
+  cursor: not-allowed;
+}
+
+/* Floating Selected Cable Detail Card */
+.cable-detail-card {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1500;
+  background-color: rgba(12, 18, 32, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-medium);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7);
+  border-radius: 8px;
+  padding: 14px 18px;
+  width: calc(100% - 48px);
+  max-width: 650px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cable-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cable-detail-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cable-type-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+}
+
+.cable-type-tag.feeder {
+  background-color: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid #059669;
+}
+
+.cable-type-tag.distribution {
+  background-color: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: 1px solid #2563eb;
+}
+
+.cable-type-tag.drop_core {
+  background-color: rgba(148, 163, 184, 0.2);
+  color: #cbd5e1;
+  border: 1px solid #64748b;
+}
+
+.cable-detail-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.cable-detail-close:hover {
+  color: var(--text-main);
+}
+
+.cable-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  background-color: var(--bg-subtle);
+  padding: 10px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+}
+
+.cable-stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cable-stat-item .stat-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.cable-stat-item .stat-val {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-main);
+  font-family: var(--font-mono);
+}
+
+.cable-detail-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* AddCableModal Routing Options */
+.routing-mode-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.routing-mode-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background-color: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.routing-mode-card.active {
+  border-color: var(--border-focus);
+  background-color: rgba(37, 99, 235, 0.1);
+}
+
+.routing-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.routing-card-content strong {
+  font-size: 12px;
+  color: var(--text-main);
+}
+
+.routing-card-content span {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.routing-estimate-box {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background-color: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.routing-estimate-box strong {
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}

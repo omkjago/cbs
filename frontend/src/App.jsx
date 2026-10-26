@@ -12,6 +12,7 @@ import LayerFilter from './components/LayerFilter';
 import KpiCards from './components/KpiCards';
 import FaultAlertBanner from './components/FaultAlertBanner';
 import AddNodeModal from './components/AddNodeModal';
+import AddCableModal from './components/AddCableModal';
 import LoginModal from './components/LoginModal';
 import { IconInventory } from './components/Icons';
 import { Api } from './services/api';
@@ -35,6 +36,7 @@ export default function App() {
 
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isAddNodeOpen, setIsAddNodeOpen] = useState(false);
+  const [isAddCableOpen, setIsAddCableOpen] = useState(false);
   const [coords, setCoords] = useState({ lat: -6.991, lng: 110.423 });
   const [inputMethod, setInputMethod] = useState('map_marker');
   const [toast, setToast] = useState(null);
@@ -177,6 +179,40 @@ export default function App() {
     loadMapData();
   };
 
+  const handleCreateCable = async (cableData) => {
+    const res = await Api.createCable(cableData);
+    showToast(res.message || 'Jalur kabel berhasil dipasang.', 'success');
+    loadMapData();
+  };
+
+  const handleUpdateCableWaypoints = async (cableId, waypoints) => {
+    setMapData((prev) => {
+      const updatedCables = (prev.cables || []).map((c) =>
+        c.id === cableId ? { ...c, waypoints } : c
+      );
+      return { ...prev, cables: updatedCables };
+    });
+
+    try {
+      const res = await Api.updateCable(cableId, { waypoints });
+      showToast(res.message || 'Jalur kabel berhasil diperbarui.', 'success');
+      loadMapData();
+    } catch (err) {
+      showToast('Gagal memperbarui jalur kabel: ' + err.message, 'error');
+      loadMapData();
+    }
+  };
+
+  const handleDeleteCable = async (cableId) => {
+    try {
+      await Api.deleteCable(cableId);
+      showToast('Kabel berhasil dihapus.', 'success');
+      loadMapData();
+    } catch (err) {
+      showToast('Gagal menghapus kabel: ' + err.message, 'error');
+    }
+  };
+
   const handleDeleteNode = async (id) => {
     try {
       const res = await Api.deleteNode(id);
@@ -210,6 +246,7 @@ export default function App() {
         <Topbar
           currentView={currentView}
           onOpenAddNode={() => setIsAddNodeOpen(true)}
+          onOpenAddCable={() => setIsAddCableOpen(true)}
           onRefresh={loadMapData}
           onLogout={handleLogout}
           onOpenLogin={() => setIsLoginOpen(true)}
@@ -293,6 +330,9 @@ export default function App() {
               onPickerMove={handlePickerMove}
               onUpdateCoords={handleUpdateCoords}
               onLiveOpm={handleLiveOpm}
+              onUpdateCableWaypoints={handleUpdateCableWaypoints}
+              onDeleteCable={handleDeleteCable}
+              onToast={showToast}
             />
           </div>
 
@@ -362,6 +402,14 @@ export default function App() {
         inputMethod={inputMethod}
         onSubmit={handleCreateNode}
         onUseGps={handleUseGps}
+        onToast={showToast}
+      />
+
+      <AddCableModal
+        isOpen={isAddCableOpen}
+        onClose={() => setIsAddCableOpen(false)}
+        nodes={mapData.nodes || []}
+        onSubmit={handleCreateCable}
         onToast={showToast}
       />
 

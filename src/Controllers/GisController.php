@@ -577,7 +577,7 @@ final class GisController
                     $cablesStmt->execute([$id, $id]);
                     $connectedCables = $cablesStmt->fetchAll();
 
-                    $updCbl = $pdo->prepare("UPDATE gis_cables SET waypoints_json = ? WHERE id = ?");
+                    $updCbl = $pdo->prepare("UPDATE gis_cables SET waypoints_json = ?, length_meters = ? WHERE id = ?");
 
                     foreach ($connectedCables as $cRow) {
                         $wps = is_string($cRow['waypoints_json']) ? json_decode($cRow['waypoints_json'], true) : $cRow['waypoints_json'];
@@ -592,7 +592,21 @@ final class GisController
                                 $changed = true;
                             }
                             if ($changed) {
-                                $updCbl->execute([json_encode($wps), $cRow['id']]);
+                                // Recalculate geodesic length across all winding waypoints
+                                $totalMeters = 0.0;
+                                $earthRadius = 6371000;
+                                for ($i = 0; $i < count($wps) - 1; $i++) {
+                                    $p1 = $wps[$i];
+                                    $p2 = $wps[$i + 1];
+                                    $dLat = deg2rad((float)$p2[0] - (float)$p1[0]);
+                                    $dLng = deg2rad((float)$p2[1] - (float)$p1[1]);
+                                    $a = sin($dLat / 2) * sin($dLat / 2) +
+                                         cos(deg2rad((float)$p1[0])) * cos(deg2rad((float)$p2[0])) *
+                                         sin($dLng / 2) * sin($dLng / 2);
+                                    $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+                                    $totalMeters += ($earthRadius * $c);
+                                }
+                                $updCbl->execute([json_encode($wps), round($totalMeters, 2), $cRow['id']]);
                             }
                         }
                     }
@@ -644,7 +658,7 @@ final class GisController
 
     /**
      * POST /api/v1/gis/cables
-     * Create FO Cable Polyline
+     * Create FO Cable Polyline (supports winding/multi-point waypoints)
      */
     public static function createCable(): void
     {
@@ -659,13 +673,44 @@ final class GisController
         $waypoints = $input['waypoints'] ?? [];
         $length = isset($input['length_meters']) ? (float)$input['length_meters'] : 0.0;
 
-        if ($cableCode === '' || $startNodeId === 0 || $endNodeId === 0 || empty($waypoints)) {
+        if ($cableCode === '' || $startNodeId === 0 || $endNodeId === 0 || empty($waypoints) || count($waypoints) < 2) {
             http_response_code(422);
             echo json_encode([
                 'status' => 'error',
-                'message' => 'Kode kabel, node awal, node akhir, dan titik waypoints polyline wajib diisi.'
+                'message' => 'Kode kabel, node awal, node akhir, dan titik waypoints polyline (minimal 2 titik) wajib diisi.'
             ]);
             return;
+        }
+
+        // Clean waypoints
+        $cleanedWaypoints = [];
+        foreach ($waypoints as $wp) {
+            if (!is_array($wp) || count($wp) < 2) continue;
+            $cleanedWaypoints[] = [(float)$wp[0], (float)$wp[1]];
+        }
+
+        if (count($cleanedWaypoints) < 2) {
+            http_response_code(422);
+            echo json_encode(['status' => 'error', 'message' => 'Titik koordinat kabel tidak mencukupi.']);
+            return;
+        }
+
+        // Calculate accurate geodesic length along winding polyline if not supplied
+        if ($length <= 0.0) {
+            $totalMeters = 0.0;
+            $earthRadius = 6371000;
+            for ($i = 0; $i < count($cleanedWaypoints) - 1; $i++) {
+                $p1 = $cleanedWaypoints[$i];
+                $p2 = $cleanedWaypoints[$i + 1];
+                $dLat = deg2rad($p2[0] - $p1[0]);
+                $dLng = deg2rad($p2[1] - $p1[1]);
+                $a = sin($dLat / 2) * sin($dLat / 2) +
+                     cos(deg2rad($p1[0])) * cos(deg2rad($p2[0])) *
+                     sin($dLng / 2) * sin($dLng / 2);
+                $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+                $totalMeters += ($earthRadius * $c);
+            }
+            $length = round($totalMeters, 2);
         }
 
         try {
@@ -676,20 +721,20 @@ final class GisController
                     start_node_id, end_node_id, waypoints_json, 
                     length_meters, current_visual_status
                 ) VALUES (
-                    :code, :type, :cores, 
-                    :start_id, :end_id, :waypoints, 
-                    :length, 'normal'
+                    ?, ?, ?, 
+                    ?, ?, ?, 
+                    ?, 'normal'
                 )
             ");
 
             $stmt->execute([
-                ':code' => $cableCode,
-                ':type' => $cableType,
-                ':cores' => $coreCount,
-                ':start_id' => $startNodeId,
-                ':end_id' => $endNodeId,
-                ':waypoints' => json_encode($waypoints),
-                ':length' => $length
+                $cableCode,
+                $cableType,
+                $coreCount,
+                $startNodeId,
+                $endNodeId,
+                json_encode($cleanedWaypoints),
+                $length
             ]);
 
             http_response_code(201);
@@ -698,13 +743,135 @@ final class GisController
                 'message' => "Jalur kabel '{$cableCode}' berhasil disimpan.",
                 'data' => [
                     'id' => (int)$pdo->lastInsertId(),
-                    'cable_code' => $cableCode
+                    'cable_code' => $cableCode,
+                    'length_meters' => $length
                 ]
             ]);
 
         } catch (Throwable $e) {
             http_response_code(500);
             echo json_encode(['status' => 'error', 'message' => 'Gagal menyimpan kabel: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * PUT /api/v1/gis/cables/{id}
+     * Update FO Cable waypoints (bends/turns) or attributes
+     */
+    public static function updateCable(int $id): void
+    {
+        AuthMiddleware::authenticate(['super_admin', 'noc']);
+        $input = json_decode((string)file_get_contents('php://input'), true);
+
+        try {
+            $pdo = Database::getConnection();
+            $checkStmt = $pdo->prepare("SELECT id, cable_code, start_node_id, end_node_id FROM gis_cables WHERE id = ? LIMIT 1");
+            $checkStmt->execute([$id]);
+            $cable = $checkStmt->fetch();
+
+            if (!$cable) {
+                http_response_code(404);
+                echo json_encode(['status' => 'error', 'message' => 'Kabel tidak ditemukan.']);
+                return;
+            }
+
+            $fields = [];
+            $values = [];
+            $totalMeters = null;
+            $cleanedWaypoints = null;
+
+            if (isset($input['waypoints']) && is_array($input['waypoints'])) {
+                $waypoints = $input['waypoints'];
+                if (count($waypoints) < 2) {
+                    http_response_code(422);
+                    echo json_encode(['status' => 'error', 'message' => 'Jalur kabel minimal harus memiliki 2 titik koordinat.']);
+                    return;
+                }
+
+                $cleanedWaypoints = [];
+                foreach ($waypoints as $wp) {
+                    if (!is_array($wp) || count($wp) < 2) continue;
+                    $lat = (float)$wp[0];
+                    $lng = (float)$wp[1];
+                    if ($lat < -90.0 || $lat > 90.0 || $lng < -180.0 || $lng > 180.0) {
+                        http_response_code(422);
+                        echo json_encode(['status' => 'error', 'message' => 'Terdapat koordinat waypoint tidak valid.']);
+                        return;
+                    }
+                    $cleanedWaypoints[] = [$lat, $lng];
+                }
+
+                if (count($cleanedWaypoints) < 2) {
+                    http_response_code(422);
+                    echo json_encode(['status' => 'error', 'message' => 'Titik koordinat kabel tidak mencukupi.']);
+                    return;
+                }
+
+                // Calculate total geodesic distance across all segments (berkelok-kelok)
+                $totalMeters = 0.0;
+                $earthRadius = 6371000;
+                for ($i = 0; $i < count($cleanedWaypoints) - 1; $i++) {
+                    $p1 = $cleanedWaypoints[$i];
+                    $p2 = $cleanedWaypoints[$i + 1];
+                    $dLat = deg2rad($p2[0] - $p1[0]);
+                    $dLng = deg2rad($p2[1] - $p1[1]);
+                    $a = sin($dLat / 2) * sin($dLat / 2) +
+                         cos(deg2rad($p1[0])) * cos(deg2rad($p2[0])) *
+                         sin($dLng / 2) * sin($dLng / 2);
+                    $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+                    $totalMeters += ($earthRadius * $c);
+                }
+
+                $fields[] = 'waypoints_json = ?';
+                $values[] = json_encode($cleanedWaypoints);
+
+                $fields[] = 'length_meters = ?';
+                $values[] = round($totalMeters, 2);
+            }
+
+            if (isset($input['cable_code'])) {
+                $fields[] = 'cable_code = ?';
+                $values[] = strtoupper(trim((string)$input['cable_code']));
+            }
+
+            if (isset($input['cable_type'])) {
+                $fields[] = 'cable_type = ?';
+                $values[] = strtolower(trim((string)$input['cable_type']));
+            }
+
+            if (isset($input['core_count'])) {
+                $fields[] = 'core_count = ?';
+                $values[] = (int)$input['core_count'];
+            }
+
+            if (empty($fields)) {
+                http_response_code(400);
+                echo json_encode(['status' => 'error', 'message' => 'Tidak ada field kabel yang diperbarui.']);
+                return;
+            }
+
+            $sql = "UPDATE gis_cables SET " . implode(', ', $fields) . " WHERE id = ?";
+            $values[] = $id;
+
+            $updateStmt = $pdo->prepare($sql);
+            $updateStmt->execute($values);
+
+            if (!headers_sent()) {
+                http_response_code(200);
+            }
+            echo json_encode([
+                'status' => 'success',
+                'message' => 'Jalur waypoints kabel berhasil diperbarui.',
+                'data' => [
+                    'id' => $id,
+                    'length_meters' => $totalMeters !== null ? round($totalMeters, 2) : null,
+                    'waypoints' => $cleanedWaypoints
+                ]
+            ]);
+
+        } catch (Throwable $e) {
+            http_response_code(500);
+            echo json_encode(['status' => 'error', 'message' => 'Gagal memperbarui kabel: ' . $e->getMessage()]);
         }
     }
 
