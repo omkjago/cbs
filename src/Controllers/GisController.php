@@ -695,6 +695,24 @@ final class GisController
             return;
         }
 
+        try {
+            $pdo = Database::getConnection();
+            // Lock waypoints[0] to start node and waypoints[last] to end node
+            $nodePosStmt = $pdo->prepare("SELECT id, latitude, longitude FROM gis_nodes WHERE id IN (?, ?)");
+            $nodePosStmt->execute([$startNodeId, $endNodeId]);
+            $nodeRows = $nodePosStmt->fetchAll();
+            $posMap = [];
+            foreach ($nodeRows as $nr) {
+                $posMap[(int)$nr['id']] = [(float)$nr['latitude'], (float)$nr['longitude']];
+            }
+            if (isset($posMap[$startNodeId])) {
+                $cleanedWaypoints[0] = $posMap[$startNodeId];
+            }
+            if (isset($posMap[$endNodeId])) {
+                $cleanedWaypoints[count($cleanedWaypoints) - 1] = $posMap[$endNodeId];
+            }
+        } catch (Throwable $e) {}
+
         // Calculate accurate geodesic length along winding polyline if not supplied
         if ($length <= 0.0) {
             $totalMeters = 0.0;
@@ -805,6 +823,21 @@ final class GisController
                     http_response_code(422);
                     echo json_encode(['status' => 'error', 'message' => 'Titik koordinat kabel tidak mencukupi.']);
                     return;
+                }
+
+                // Strictly lock endpoints to connected start and end nodes
+                $nodePosStmt = $pdo->prepare("SELECT id, latitude, longitude FROM gis_nodes WHERE id IN (?, ?)");
+                $nodePosStmt->execute([(int)$cable['start_node_id'], (int)$cable['end_node_id']]);
+                $nodeRows = $nodePosStmt->fetchAll();
+                $posMap = [];
+                foreach ($nodeRows as $nr) {
+                    $posMap[(int)$nr['id']] = [(float)$nr['latitude'], (float)$nr['longitude']];
+                }
+                if (isset($posMap[(int)$cable['start_node_id']])) {
+                    $cleanedWaypoints[0] = $posMap[(int)$cable['start_node_id']];
+                }
+                if (isset($posMap[(int)$cable['end_node_id']])) {
+                    $cleanedWaypoints[count($cleanedWaypoints) - 1] = $posMap[(int)$cable['end_node_id']];
                 }
 
                 // Calculate total geodesic distance across all segments (berkelok-kelok)
