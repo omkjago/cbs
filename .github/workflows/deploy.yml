@@ -75,6 +75,9 @@ jobs:
     needs: ci-test-build
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
     runs-on: ubuntu-latest
+    env:
+      DEPLOY_SSH_HOST: ${{ secrets.SSH_HOST }}
+      DEPLOY_FTP_SERVER: ${{ secrets.FTP_SERVER }}
 
     steps:
       - name: Checkout Code
@@ -119,7 +122,7 @@ jobs:
 
       # Option B: Deploy via FTP/FTPS (Alternative for Shared Hosting / cPanel)
       - name: Deploy via FTPS (Shared Hosting / cPanel)
-        if: env.FTP_SERVER != ''
+        if: env.DEPLOY_FTP_SERVER != ''
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
