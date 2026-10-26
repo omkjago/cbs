@@ -27,6 +27,7 @@ export default function GisMap({
   const markersRef = useRef(new Map());
   const cablesRef = useRef(new Map());
   const pickerMarkerRef = useRef(null);
+  const isDraggingNodeRef = useRef(null);
 
   // 1. Initialize Leaflet Map
   useEffect(() => {
@@ -107,93 +108,126 @@ export default function GisMap({
     });
   };
 
-  // 3. Render Nodes & Cables (Interactive & Dynamic Auto-Connect)
+  // 3. Render Nodes & Cables with In-Place Leaflet Reconciliation
   useEffect(() => {
     const map = mapInstance.current;
     if (!map) return;
 
-    // Clear old cables
-    cablesRef.current.forEach((item) => {
-      if (item && item.polyline) {
-        map.removeLayer(item.polyline);
-      }
-    });
-    cablesRef.current.clear();
-
+    // Track active cable keys to reconcile without destroying layers
+    const activeCableKeys = new Set();
     const existingPairs = new Set();
 
-    // Render Explicit Cables from database
+    // Render / Reconcile Explicit Cables
     cables.forEach((cable) => {
       if (!cable.waypoints || cable.waypoints.length < 2) return;
+      const cableKey = String(cable.id);
+      activeCableKeys.add(cableKey);
 
-      const polyline = L.polyline(cable.waypoints, {
-        color: cable.status_color || '#10B981',
-        weight: cable.cable_type === 'feeder' ? 6 : cable.cable_type === 'distribution' ? 4 : 2.5,
-        opacity: 0.85,
-        dashArray: cable.is_flashing ? '8, 8' : null
-      }).addTo(map);
+      const startId = Number(cable.start_node_id);
+      const endId = Number(cable.end_node_id);
+      existingPairs.add(`${startId}-${endId}`);
+      existingPairs.add(`${endId}-${startId}`);
 
-      polyline.bindTooltip(
-        `<strong>Kabel: ${cable.cable_code}</strong><br>Tipe: ${cable.cable_type} (${cable.core_count} Core)<br>Status: ${cable.current_visual_status}`,
-        { sticky: true }
-      );
+      const statusColor = cable.status_color || '#10B981';
+      const weight = cable.cable_type === 'feeder' ? 6 : cable.cable_type === 'distribution' ? 4 : 2.5;
+      const existingCable = cablesRef.current.get(cableKey);
 
-      cablesRef.current.set(cable.id, {
-        polyline,
-        start_node_id: cable.start_node_id,
-        end_node_id: cable.end_node_id
-      });
+      if (existingCable && existingCable.polyline) {
+        // Only update waypoints if this cable endpoint is not currently being dragged by cursor
+        if (isDraggingNodeRef.current !== startId && isDraggingNodeRef.current !== endId) {
+          existingCable.polyline.setLatLngs(cable.waypoints);
+        }
+        existingCable.polyline.setStyle({
+          color: statusColor,
+          weight,
+          dashArray: cable.is_flashing ? '8, 8' : null
+        });
+        existingCable.start_node_id = startId;
+        existingCable.end_node_id = endId;
+      } else {
+        const polyline = L.polyline(cable.waypoints, {
+          color: statusColor,
+          weight,
+          opacity: 0.85,
+          dashArray: cable.is_flashing ? '8, 8' : null
+        }).addTo(map);
 
-      if (cable.start_node_id && cable.end_node_id) {
-        existingPairs.add(`${cable.start_node_id}-${cable.end_node_id}`);
-        existingPairs.add(`${cable.end_node_id}-${cable.start_node_id}`);
+        polyline.bindTooltip(
+          `<strong>Kabel: ${cable.cable_code}</strong><br>Tipe: ${cable.cable_type} (${cable.core_count} Core)<br>Status: ${cable.current_visual_status}`,
+          { sticky: true }
+        );
+
+        cablesRef.current.set(cableKey, {
+          polyline,
+          start_node_id: startId,
+          end_node_id: endId
+        });
       }
     });
 
-    // Auto-Connect any node with parent_node_id that lacks a cable
-    const nodeMap = new Map();
-    nodes.forEach((n) => nodeMap.set(n.id, n));
+    // Auto-Connect any node with parent_node_id missing a cable record
+    const nodeLookup = new Map();
+    nodes.forEach((n) => nodeLookup.set(n.id, n));
 
     nodes.forEach((n) => {
-      if (n.parent_node_id && nodeMap.has(n.parent_node_id)) {
-        const parent = nodeMap.get(n.parent_node_id);
-        const pairKey = `${parent.id}-${n.id}`;
+      if (n.parent_node_id && nodeLookup.has(n.parent_node_id)) {
+        const parent = nodeLookup.get(n.parent_node_id);
+        const pId = Number(parent.id);
+        const nId = Number(n.id);
+        const pairKey = `${pId}-${nId}`;
+
         if (!existingPairs.has(pairKey)) {
-          const autoKey = `auto-${n.id}`;
+          const autoKey = `auto-${nId}`;
+          activeCableKeys.add(autoKey);
+
+          const existingAuto = cablesRef.current.get(autoKey);
           const isDrop = n.node_type === 'CUSTOMER';
-          const autoLine = L.polyline(
-            [
-              [parent.latitude, parent.longitude],
-              [n.latitude, n.longitude]
-            ],
-            {
+          const waypoints = [
+            [parent.latitude, parent.longitude],
+            [n.latitude, n.longitude]
+          ];
+
+          if (existingAuto && existingAuto.polyline) {
+            if (isDraggingNodeRef.current !== pId && isDraggingNodeRef.current !== nId) {
+              existingAuto.polyline.setLatLngs(waypoints);
+            }
+          } else {
+            const autoLine = L.polyline(waypoints, {
               color: '#10B981',
               weight: isDrop ? 2.5 : 4,
               opacity: 0.85,
               dashArray: isDrop ? '6, 6' : null
-            }
-          ).addTo(map);
+            }).addTo(map);
 
-          autoLine.bindTooltip(
-            `<strong>Jalur Kabel Terhubung Otomatis</strong><br>Dari: ${parent.node_code} &rarr; Ke: ${n.node_code}`,
-            { sticky: true }
-          );
+            autoLine.bindTooltip(
+              `<strong>Jalur Kabel Terhubung Otomatis</strong><br>Dari: ${parent.node_code} &rarr; Ke: ${n.node_code}`,
+              { sticky: true }
+            );
 
-          cablesRef.current.set(autoKey, {
-            polyline: autoLine,
-            start_node_id: parent.id,
-            end_node_id: n.id
-          });
+            cablesRef.current.set(autoKey, {
+              polyline: autoLine,
+              start_node_id: pId,
+              end_node_id: nId
+            });
+          }
           existingPairs.add(pairKey);
         }
       }
     });
 
-    // Clear old markers
-    markersRef.current.forEach((m) => map.removeLayer(m));
-    markersRef.current.clear();
+    // Remove obsolete cables
+    cablesRef.current.forEach((item, key) => {
+      if (!activeCableKeys.has(key)) {
+        if (item && item.polyline) {
+          map.removeLayer(item.polyline);
+        }
+        cablesRef.current.delete(key);
+      }
+    });
 
-    // Render Nodes with live interactive dragging of cables
+    // Reconcile Markers In-Place
+    const activeNodeIds = new Set();
+
     nodes.forEach((node) => {
       // Check layer filter
       let isVisible = true;
@@ -204,73 +238,107 @@ export default function GisMap({
         isVisible = filters[node.node_type] ?? true;
       }
 
-      if (!isVisible) return;
+      const existingMarker = markersRef.current.get(node.id);
 
+      if (!isVisible) {
+        if (existingMarker) {
+          map.removeLayer(existingMarker);
+          markersRef.current.delete(node.id);
+        }
+        return;
+      }
+
+      activeNodeIds.add(node.id);
       const isPulsing = node.status === 'LOS';
       const icon = createCustomIcon(node.node_type, node.status, isPulsing);
 
-      const marker = L.marker([node.latitude, node.longitude], {
-        icon,
-        draggable: true
-      }).addTo(map);
+      if (existingMarker) {
+        // Only update coordinate if user is not actively dragging this marker
+        if (isDraggingNodeRef.current !== Number(node.id)) {
+          existingMarker.setLatLng([node.latitude, node.longitude]);
+        }
+        existingMarker.setIcon(icon);
+      } else {
+        const marker = L.marker([node.latitude, node.longitude], {
+          icon,
+          draggable: true
+        }).addTo(map);
 
-      // LIVE INTERACTIVE CABLE UPDATES WHILE DRAGGING
-      marker.on('drag', (e) => {
-        const pos = e.target.getLatLng();
-        cablesRef.current.forEach((cableItem) => {
-          if (!cableItem || !cableItem.polyline) return;
-          const { polyline, start_node_id, end_node_id } = cableItem;
-          if (start_node_id === node.id || end_node_id === node.id) {
-            const currentPoints = polyline.getLatLngs();
-            if (currentPoints && currentPoints.length >= 2) {
-              const updatedPoints = [...currentPoints];
-              if (start_node_id === node.id) {
-                updatedPoints[0] = pos;
+        // DRAGSTART: Record active dragging node
+        marker.on('dragstart', () => {
+          isDraggingNodeRef.current = Number(node.id);
+        });
+
+        // LIVE INTERACTIVE CABLE UPDATES WHILE DRAGGING
+        marker.on('drag', (e) => {
+          const pos = e.target.getLatLng();
+          const targetId = Number(node.id);
+
+          cablesRef.current.forEach((cableItem) => {
+            if (!cableItem || !cableItem.polyline) return;
+            const startId = Number(cableItem.start_node_id);
+            const endId = Number(cableItem.end_node_id);
+
+            if (startId === targetId || endId === targetId) {
+              const currentPoints = cableItem.polyline.getLatLngs();
+              if (Array.isArray(currentPoints) && currentPoints.length >= 2) {
+                const updatedPoints = currentPoints.map((pt, idx) => {
+                  if (startId === targetId && idx === 0) return [pos.lat, pos.lng];
+                  if (endId === targetId && idx === currentPoints.length - 1) return [pos.lat, pos.lng];
+                  return pt instanceof L.LatLng ? [pt.lat, pt.lng] : pt;
+                });
+                cableItem.polyline.setLatLngs(updatedPoints);
               }
-              if (end_node_id === node.id) {
-                updatedPoints[updatedPoints.length - 1] = pos;
-              }
-              polyline.setLatLngs(updatedPoints);
             }
+          });
+        });
+
+        // DRAGEND: Persist coordinates via optimistic auto-save
+        marker.on('dragend', (e) => {
+          isDraggingNodeRef.current = null;
+          const pos = e.target.getLatLng();
+          if (onUpdateCoords) {
+            onUpdateCoords(node.id, pos.lat, pos.lng, node.node_name);
           }
         });
-      });
 
-      // Handle dragend to persist coordinates
-      marker.on('dragend', (e) => {
-        const pos = e.target.getLatLng();
-        if (onUpdateCoords) {
-          onUpdateCoords(node.id, pos.lat, pos.lng, node.node_name);
-        }
-      });
+        // Status Badge HTML
+        const rxText = node.rx_power_dbm !== null ? `${node.rx_power_dbm} dBm` : '-';
+        const popupContent = document.createElement('div');
+        popupContent.style.minWidth = '200px';
+        popupContent.innerHTML = `
+          <div style="font-weight:bold; font-size:14px; margin-bottom:4px; color:#1e293b;">${escapeHtml(node.node_name)}</div>
+          <div style="font-size:11px; color:#64748b; margin-bottom:8px;">Kode: <strong>${escapeHtml(node.node_code)}</strong> (${escapeHtml(node.node_type)})</div>
+          <div style="font-size:12px; margin-bottom:4px; color:#1e293b;">Rx Power (OPM): <strong>${escapeHtml(rxText)}</strong></div>
+          ${node.address_note ? `<div style="font-size:11px; color:#475569; margin-top:4px;">Alamat: <strong>${escapeHtml(node.address_note)}</strong></div>` : ''}
+          <hr style="border:none; border-top:1px solid #e2e8f0; margin:8px 0;">
+          <div style="display:flex; gap:6px;">
+            <button id="btn-opm-${node.id}" style="flex:1; background:#2563eb; color:white; border:none; border-radius:4px; padding:6px 10px; font-size:11px; font-weight:600; cursor:pointer;">
+              Periksa OPM
+            </button>
+            <a href="https://www.google.com/maps/dir/?api=1&destination=${node.latitude},${node.longitude}" target="_blank" style="text-decoration:none; background:#0f766e; color:white; border-radius:4px; padding:6px 10px; font-size:11px; font-weight:600; display:flex; align-items:center;">
+              Navigasi Maps
+            </a>
+          </div>
+        `;
 
-      // Status Badge HTML
-      const rxText = node.rx_power_dbm !== null ? `${node.rx_power_dbm} dBm` : '-';
-      const popupContent = document.createElement('div');
-      popupContent.style.minWidth = '200px';
-      popupContent.innerHTML = `
-        <div style="font-weight:bold; font-size:14px; margin-bottom:4px; color:#1e293b;">${escapeHtml(node.node_name)}</div>
-        <div style="font-size:11px; color:#64748b; margin-bottom:8px;">Kode: <strong>${escapeHtml(node.node_code)}</strong> (${escapeHtml(node.node_type)})</div>
-        <div style="font-size:12px; margin-bottom:4px; color:#1e293b;">Rx Power (OPM): <strong>${escapeHtml(rxText)}</strong></div>
-        ${node.address_note ? `<div style="font-size:11px; color:#475569; margin-top:4px;">Alamat: <strong>${escapeHtml(node.address_note)}</strong></div>` : ''}
-        <hr style="border:none; border-top:1px solid #e2e8f0; margin:8px 0;">
-        <div style="display:flex; gap:6px;">
-          <button id="btn-opm-${node.id}" style="flex:1; background:#2563eb; color:white; border:none; border-radius:4px; padding:6px 10px; font-size:11px; font-weight:600; cursor:pointer;">
-            Periksa OPM
-          </button>
-          <a href="https://www.google.com/maps/dir/?api=1&destination=${node.latitude},${node.longitude}" target="_blank" style="text-decoration:none; background:#0f766e; color:white; border-radius:4px; padding:6px 10px; font-size:11px; font-weight:600; display:flex; align-items:center;">
-            Navigasi Maps
-          </a>
-        </div>
-      `;
+        popupContent.querySelector(`#btn-opm-${node.id}`)?.addEventListener('click', () => {
+          if (onLiveOpm) onLiveOpm(node);
+        });
 
-      popupContent.querySelector(`#btn-opm-${node.id}`)?.addEventListener('click', () => {
-        if (onLiveOpm) onLiveOpm(node);
-      });
-
-      marker.bindPopup(popupContent);
-      markersRef.current.set(node.id, marker);
+        marker.bindPopup(popupContent);
+        markersRef.current.set(node.id, marker);
+      }
     });
+
+    // Remove obsolete markers
+    markersRef.current.forEach((marker, id) => {
+      if (!activeNodeIds.has(id)) {
+        map.removeLayer(marker);
+        markersRef.current.delete(id);
+      }
+    });
+
   }, [nodes, cables, filters]);
 
   // 4. Handle Location Picker Pin (When AddNodeModal is active)
